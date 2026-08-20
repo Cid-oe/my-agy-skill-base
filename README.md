@@ -11,5 +11,5 @@ ecosystem, and the RFCs that define their contracts.
 - `schemas/` — canonical machine-readable contracts and validation schemas.
 - `examples/` — runnable examples and reference integrations.
 
-Start with [the system overview](docs/RFC-0000-System-Overview.md), then use
-the RFC index in `docs/rfcs/` for subsystem-level design.
+Start with [RFC-0000](docs/RFC-0000-System-Overview.md), the documentation
+entry point for system-level and subsystem RFC material.
