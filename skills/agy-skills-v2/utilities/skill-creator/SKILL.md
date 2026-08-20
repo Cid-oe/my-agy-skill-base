@@ -1,7 +1,9 @@
 ---
 name: skill-creator
+id: skill-creator
 description: Use when a new recurring task or workflow would benefit from its own skill — to draft a properly structured, fully filled-in SKILL.md rather than a placeholder template.
-version: 2.0
+version: 2.0.0
+entryPoint: SKILL.md
 requiresSkillVersion: ">=1.0"
 category: utilities
 priority: low

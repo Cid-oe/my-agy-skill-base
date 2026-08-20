@@ -1,7 +1,9 @@
 ---
 name: caveman-compress
+id: caveman-compress
 description: Use when content needs to be shortened significantly — long context, verbose docs, a large output — while preserving the specific facts that matter.
-version: 2.0
+version: 2.0.0
+entryPoint: SKILL.md
 requiresSkillVersion: ">=1.0"
 category: utilities
 priority: medium

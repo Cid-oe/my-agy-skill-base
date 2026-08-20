@@ -1,7 +1,9 @@
 ---
 name: ponytail-help
+id: ponytail-help
 description: Use when asked what the ponytail-family skills do or which one to use — reference index for ponytail, ponytail-review, ponytail-audit, ponytail-debt, and ponytail-gain.
-version: 2.0
+version: 2.0.0
+entryPoint: SKILL.md
 requiresSkillVersion: ">=1.0"
 category: utilities
 priority: low

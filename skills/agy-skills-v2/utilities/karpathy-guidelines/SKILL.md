@@ -1,7 +1,9 @@
 ---
 name: karpathy-guidelines
+id: karpathy-guidelines
 description: Use as a general coding-philosophy check on generated code — favor simple, readable, deletable code over clever abstraction, and flag generated code that's more complex than the problem warrants.
-version: 2.0
+version: 2.0.0
+entryPoint: SKILL.md
 requiresSkillVersion: ">=1.0"
 category: utilities
 priority: medium

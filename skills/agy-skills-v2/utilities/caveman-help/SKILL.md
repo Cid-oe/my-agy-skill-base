@@ -1,7 +1,9 @@
 ---
 name: caveman-help
+id: caveman-help
 description: Use when asked what the caveman-family skills do or which one to use — reference index for caveman, cavecrew, caveman-commit, caveman-compress, caveman-review, and caveman-stats.
-version: 2.0
+version: 2.0.0
+entryPoint: SKILL.md
 requiresSkillVersion: ">=1.0"
 category: utilities
 priority: low

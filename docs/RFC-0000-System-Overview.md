@@ -1,26 +1,9 @@
-# RFC-0000: Index
+# RFC-0000: Index (redirect)
 
-**Status:** Draft  
-**Purpose:** Entry point for AGY system documentation.
+**This file is superseded.** The canonical AGY entry point — vision,
+architecture, dependency graph, RFC process, status ledger, repository
+structure, naming conventions, subsystem map, and roadmap — is now:
 
-```text
-RFC-0000
-|
-|-- Vision
-|-- Architecture Diagram
-|-- Dependency Graph
-|-- RFC Roadmap
-|-- Glossary
-|-- Kernel Lifecycle
-`-- Status of each subsystem
-```
+**[`docs/rfcs/RFC-0000.md`](rfcs/RFC-0000.md)**
 
-| Entry | Location |
-| --- | --- |
-| Vision | [AGY README](../README.md) |
-| Architecture Diagram | [Diagrams](diagrams/README.md) |
-| Dependency Graph | [RFC dependency declarations](rfcs/) |
-| RFC Roadmap | [RFCs](rfcs/) |
-| Glossary | [Glossary](glossary.md) |
-| Kernel Lifecycle | [Kernel](../kernel/README.md) |
-| Status of each subsystem | [RFC status declarations](rfcs/) |
+Update your links; this stub will be removed once no references remain.

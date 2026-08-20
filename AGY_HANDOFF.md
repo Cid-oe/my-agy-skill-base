@@ -1,20 +1,37 @@
 # AGY handoff
 
-## Current state
+## Current state (updated 2026-08-21 — Phase 0 complete)
 
-The design RFCs and the v2 skill package have been consolidated into this
-repository layout. The RFCs remain drafts/proposals; no kernel implementation
-has been added yet.
+The corpus has been reconciled (Phase 0). Entry point is
+[`docs/rfcs/RFC-0000.md`](docs/rfcs/RFC-0000.md): it holds the RFC status
+ledger, the canonical dependency graph, numbering rules, and the future-RFC
+registry (0016–0024 reserved).
+
+- RFCs 0001–0006 are in **Review**; 0007, 0008, 0010–0015 are **Draft**
+  pending ratification of their amendments; RFC-0009 is a retired number.
+- The amendment pack (`docs/amendments/`) resolves the plan/dispatch/policy/
+  state/event forks without rewriting any RFC. Ratifying it is **Gate G0**.
+- The skill pack (`skills/agy-skills-v2/`) is conformant with RFC-0002
+  (+A1): canonical layout, strict semver, ids/entryPoints, symmetric
+  exclusivity. It doubles as the Registry's conformance fixture.
+- Phase-0 deliverables: `docs/phase-0/01…10`.
 
 ## Where to continue
 
-1. Treat `docs/RFC-0000-System-Overview.md` as the entry point.
-2. Stabilize contracts in `schemas/` from the RFC specifications.
-3. Implement core services in `kernel/` in dependency order: registry,
-   resolver, policy, state, event bus, scheduler, then executor.
-4. Add end-to-end examples under `examples/` as interfaces become stable.
+1. Ratify the amendment pack (G0), per `docs/amendments/README.md`.
+2. Stabilize contracts in `schemas/` from the RFC specifications (G1).
+3. Implement the kernel in `kernel/` in layer order (RFC-0000 §3):
+   Registry → Resolver → Policy → Artifacts → Runtime State → Event Bus →
+   Scheduler → Executor. Acceptance gates per RFC test sections
+   (`docs/phase-0/10-phase-1-build-plan.md`).
+4. Charter the reserved-root RFCs (0016 Resource Manager & Ledger, 0017
+   Identity & Credentials, 0020 Sandbox) before Phase 2.
+5. Add end-to-end examples under `examples/` as interfaces stabilize.
 
 ## Source material
 
-- `docs/rfcs/` contains RFC-0001 through RFC-0015 (RFC-0009 is not present).
-- `skills/agy-skills-v2/` contains the skill definitions and manifest.
+- `docs/rfcs/` — RFC-0000 (entry point), RFC-0001–0008, RFC-0009
+  (retirement record), RFC-0010–0015.
+- `docs/amendments/` — the Phase-0 amendment pack (14 amendments).
+- `skills/agy-skills-v2/` — 30 skills, manifest regenerated from
+  frontmatter.

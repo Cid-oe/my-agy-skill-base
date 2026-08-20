@@ -1,7 +1,9 @@
 ---
 name: bluf
+id: bluf
 description: Use when a response could bury the key answer under preamble or reasoning — lead with the bottom line first, supporting detail after.
-version: 2.0
+version: 2.0.0
+entryPoint: SKILL.md
 requiresSkillVersion: ">=1.0"
 category: utilities
 priority: low
