@@ -1,0 +1,860 @@
+{
+  "version": 2,
+  "skillCount": 30,
+  "skills": [
+    {
+      "name": "token-budget",
+      "title": "Token Budget",
+      "category": "foundation",
+      "priority": "critical",
+      "estimatedCost": "low",
+      "estimatedLatency": "fast",
+      "estimatedContext": "low",
+      "confidenceThreshold": 0.9,
+      "escalateTo": "context-manager",
+      "consumes": [
+        "ConversationState"
+      ],
+      "produces": [
+        "BudgetReport"
+      ],
+      "requires": [],
+      "optional": [
+        "checkpoint-manager"
+      ],
+      "triggerPredicates": [
+        "conversation_tokens > 80000",
+        "files_touched > 20"
+      ],
+      "exclusiveWith": [],
+      "requiresSkillVersion": ">=1.0",
+      "path": "foundation/token-budget/SKILL.md"
+    },
+    {
+      "name": "model-router",
+      "title": "Model Router",
+      "category": "foundation",
+      "priority": "critical",
+      "estimatedCost": "low",
+      "estimatedLatency": "fast",
+      "estimatedContext": "low",
+      "confidenceThreshold": 0.85,
+      "escalateTo": "ponytail",
+      "consumes": [
+        "SubtaskList"
+      ],
+      "produces": [
+        "RoutingPlan"
+      ],
+      "requires": [
+        "task-decomposer"
+      ],
+      "optional": [
+        "gemini-skill",
+        "token-budget"
+      ],
+      "triggerPredicates": [
+        "subtask_count > 1",
+        "cost_sensitivity == high"
+      ],
+      "exclusiveWith": [],
+      "requiresSkillVersion": ">=1.0",
+      "path": "foundation/model-router/SKILL.md"
+    },
+    {
+      "name": "checkpoint-manager",
+      "title": "Checkpoint Manager",
+      "category": "foundation",
+      "priority": "high",
+      "estimatedCost": "low",
+      "estimatedLatency": "fast",
+      "estimatedContext": "low",
+      "confidenceThreshold": 0.9,
+      "escalateTo": null,
+      "consumes": [
+        "VerifiedSubtaskResult"
+      ],
+      "produces": [
+        "Checkpoint"
+      ],
+      "requires": [],
+      "optional": [
+        "task-decomposer",
+        "context-manager"
+      ],
+      "triggerPredicates": [
+        "step_count > 5",
+        "resuming_prior_task == true"
+      ],
+      "exclusiveWith": [],
+      "requiresSkillVersion": ">=1.0",
+      "path": "foundation/checkpoint-manager/SKILL.md"
+    },
+    {
+      "name": "repository-map",
+      "title": "Repository Map",
+      "category": "foundation",
+      "priority": "high",
+      "estimatedCost": "medium",
+      "estimatedLatency": "medium",
+      "estimatedContext": "medium",
+      "confidenceThreshold": 0.85,
+      "escalateTo": null,
+      "consumes": [
+        "RepoRoot"
+      ],
+      "produces": [
+        "RepositoryMap"
+      ],
+      "requires": [],
+      "optional": [
+        "token-budget"
+      ],
+      "triggerPredicates": [
+        "repository_files > 200",
+        "map_stale == true"
+      ],
+      "exclusiveWith": [],
+      "requiresSkillVersion": ">=1.0",
+      "path": "foundation/repository-map/SKILL.md"
+    },
+    {
+      "name": "context-manager",
+      "title": "Context Manager",
+      "category": "foundation",
+      "priority": "critical",
+      "estimatedCost": "low",
+      "estimatedLatency": "fast",
+      "estimatedContext": "low",
+      "confidenceThreshold": 0.85,
+      "escalateTo": "caveman-compress",
+      "consumes": [
+        "ConversationState",
+        "BudgetReport"
+      ],
+      "produces": [
+        "PrunedContext"
+      ],
+      "requires": [],
+      "optional": [
+        "token-budget",
+        "checkpoint-manager"
+      ],
+      "triggerPredicates": [
+        "conversation_tokens > 120000"
+      ],
+      "exclusiveWith": [],
+      "requiresSkillVersion": ">=1.0",
+      "path": "foundation/context-manager/SKILL.md"
+    },
+    {
+      "name": "caveman",
+      "title": "Caveman",
+      "category": "execution",
+      "priority": "medium",
+      "estimatedCost": "low",
+      "estimatedLatency": "fast",
+      "estimatedContext": "low",
+      "confidenceThreshold": 0.8,
+      "escalateTo": "ponytail",
+      "consumes": [
+        "Subtask"
+      ],
+      "produces": [
+        "ExecutionResult"
+      ],
+      "requires": [],
+      "optional": [
+        "model-router"
+      ],
+      "triggerPredicates": [
+        "subtask_risk == low",
+        "changed_files <= 1"
+      ],
+      "exclusiveWith": [
+        "ponytail"
+      ],
+      "requiresSkillVersion": ">=1.0",
+      "path": "execution/caveman/SKILL.md"
+    },
+    {
+      "name": "cavecrew",
+      "title": "Cavecrew",
+      "category": "execution",
+      "priority": "medium",
+      "estimatedCost": "medium",
+      "estimatedLatency": "medium",
+      "estimatedContext": "medium",
+      "confidenceThreshold": 0.8,
+      "escalateTo": "ponytail",
+      "consumes": [
+        "SubtaskList"
+      ],
+      "produces": [
+        "MergedExecutionResult"
+      ],
+      "requires": [
+        "task-decomposer"
+      ],
+      "optional": [
+        "checkpoint-manager"
+      ],
+      "triggerPredicates": [
+        "independent_subtasks >= 2"
+      ],
+      "exclusiveWith": [
+        "caveman"
+      ],
+      "requiresSkillVersion": ">=1.0",
+      "path": "execution/cavecrew/SKILL.md"
+    },
+    {
+      "name": "gemini-skill",
+      "title": "Gemini Delegate",
+      "category": "execution",
+      "priority": "low",
+      "estimatedCost": "medium",
+      "estimatedLatency": "medium",
+      "estimatedContext": "high",
+      "confidenceThreshold": 0.75,
+      "escalateTo": "model-router",
+      "consumes": [
+        "Subtask"
+      ],
+      "produces": [
+        "ValidatedExternalResult"
+      ],
+      "requires": [],
+      "optional": [
+        "context-manager"
+      ],
+      "triggerPredicates": [
+        "context_required_tokens > 500000",
+        "input_modality != text"
+      ],
+      "exclusiveWith": [],
+      "requiresSkillVersion": ">=1.0",
+      "path": "execution/gemini-skill/SKILL.md"
+    },
+    {
+      "name": "ponytail",
+      "title": "Ponytail",
+      "category": "execution",
+      "priority": "high",
+      "estimatedCost": "high",
+      "estimatedLatency": "slow",
+      "estimatedContext": "medium",
+      "confidenceThreshold": 0.9,
+      "escalateTo": null,
+      "consumes": [
+        "Subtask"
+      ],
+      "produces": [
+        "ExecutionResult"
+      ],
+      "requires": [],
+      "optional": [
+        "checkpoint-manager"
+      ],
+      "triggerPredicates": [
+        "subtask_risk == high",
+        "changed_files_shared == true"
+      ],
+      "exclusiveWith": [
+        "caveman"
+      ],
+      "requiresSkillVersion": ">=1.0",
+      "path": "execution/ponytail/SKILL.md"
+    },
+    {
+      "name": "prompt-coach",
+      "title": "Prompt Coach",
+      "category": "planning",
+      "priority": "high",
+      "estimatedCost": "low",
+      "estimatedLatency": "fast",
+      "estimatedContext": "low",
+      "confidenceThreshold": 0.85,
+      "escalateTo": null,
+      "consumes": [
+        "RawRequest"
+      ],
+      "produces": [
+        "ActionableRequest"
+      ],
+      "requires": [],
+      "optional": [
+        "task-decomposer",
+        "project-spec"
+      ],
+      "triggerPredicates": [
+        "request_ambiguity == high"
+      ],
+      "exclusiveWith": [],
+      "requiresSkillVersion": ">=1.0",
+      "path": "planning/prompt-coach/SKILL.md"
+    },
+    {
+      "name": "project-spec",
+      "title": "Project Spec",
+      "category": "planning",
+      "priority": "high",
+      "estimatedCost": "low",
+      "estimatedLatency": "medium",
+      "estimatedContext": "low",
+      "confidenceThreshold": 0.85,
+      "escalateTo": null,
+      "consumes": [
+        "ActionableRequest"
+      ],
+      "produces": [
+        "Spec"
+      ],
+      "requires": [],
+      "optional": [
+        "prompt-coach"
+      ],
+      "triggerPredicates": [
+        "work_type == new_feature",
+        "work_type == new_project"
+      ],
+      "exclusiveWith": [],
+      "requiresSkillVersion": ">=1.0",
+      "path": "planning/project-spec/SKILL.md"
+    },
+    {
+      "name": "task-decomposer",
+      "title": "Task Decomposer",
+      "category": "planning",
+      "priority": "critical",
+      "estimatedCost": "low",
+      "estimatedLatency": "medium",
+      "estimatedContext": "low",
+      "confidenceThreshold": 0.85,
+      "escalateTo": null,
+      "consumes": [
+        "ActionableRequest",
+        "Spec"
+      ],
+      "produces": [
+        "SubtaskList"
+      ],
+      "requires": [],
+      "optional": [
+        "project-spec"
+      ],
+      "triggerPredicates": [
+        "request_parts > 1",
+        "estimated_steps > 3"
+      ],
+      "exclusiveWith": [],
+      "requiresSkillVersion": ">=1.0",
+      "path": "planning/task-decomposer/SKILL.md"
+    },
+    {
+      "name": "architecture-review",
+      "title": "Architecture Review",
+      "category": "quality",
+      "priority": "high",
+      "estimatedCost": "medium",
+      "estimatedLatency": "medium",
+      "estimatedContext": "medium",
+      "confidenceThreshold": 0.85,
+      "escalateTo": "ponytail-review",
+      "consumes": [
+        "RepositoryMap",
+        "ExecutionResult"
+      ],
+      "produces": [
+        "ArchitectureFindings"
+      ],
+      "requires": [
+        "repository-map"
+      ],
+      "optional": [
+        "dependency-audit"
+      ],
+      "triggerPredicates": [
+        "new_module_added == true",
+        "data_flow_changed == true"
+      ],
+      "exclusiveWith": [],
+      "requiresSkillVersion": ">=1.0",
+      "path": "quality/architecture-review/SKILL.md"
+    },
+    {
+      "name": "caveman-review",
+      "title": "Caveman Review",
+      "category": "quality",
+      "priority": "medium",
+      "estimatedCost": "low",
+      "estimatedLatency": "fast",
+      "estimatedContext": "low",
+      "confidenceThreshold": 0.75,
+      "escalateTo": "ponytail-review",
+      "consumes": [
+        "ExecutionResult"
+      ],
+      "produces": [
+        "ReviewVerdict"
+      ],
+      "requires": [],
+      "optional": [],
+      "triggerPredicates": [
+        "change_risk == low",
+        "changed_lines < 50"
+      ],
+      "exclusiveWith": [
+        "ponytail-review"
+      ],
+      "requiresSkillVersion": ">=1.0",
+      "path": "quality/caveman-review/SKILL.md"
+    },
+    {
+      "name": "dependency-audit",
+      "title": "Dependency Audit",
+      "category": "quality",
+      "priority": "high",
+      "estimatedCost": "medium",
+      "estimatedLatency": "medium",
+      "estimatedContext": "low",
+      "confidenceThreshold": 0.85,
+      "escalateTo": "security-audit",
+      "consumes": [
+        "DependencyManifest"
+      ],
+      "produces": [
+        "DependencyFindings"
+      ],
+      "requires": [],
+      "optional": [
+        "security-audit"
+      ],
+      "triggerPredicates": [
+        "new_dependency_added == true",
+        "periodic_scan == true"
+      ],
+      "exclusiveWith": [],
+      "requiresSkillVersion": ">=1.0",
+      "path": "quality/dependency-audit/SKILL.md"
+    },
+    {
+      "name": "documentation-sync",
+      "title": "Documentation Sync",
+      "category": "quality",
+      "priority": "medium",
+      "estimatedCost": "low",
+      "estimatedLatency": "medium",
+      "estimatedContext": "low",
+      "confidenceThreshold": 0.8,
+      "escalateTo": null,
+      "consumes": [
+        "ExecutionResult"
+      ],
+      "produces": [
+        "UpdatedDocs"
+      ],
+      "requires": [],
+      "optional": [
+        "self-review"
+      ],
+      "triggerPredicates": [
+        "api_surface_changed == true",
+        "setup_steps_changed == true"
+      ],
+      "exclusiveWith": [],
+      "requiresSkillVersion": ">=1.0",
+      "path": "quality/documentation-sync/SKILL.md"
+    },
+    {
+      "name": "ponytail-audit",
+      "title": "Ponytail Audit",
+      "category": "quality",
+      "priority": "medium",
+      "estimatedCost": "medium",
+      "estimatedLatency": "slow",
+      "estimatedContext": "medium",
+      "confidenceThreshold": 0.8,
+      "escalateTo": null,
+      "consumes": [
+        "RepositoryMap"
+      ],
+      "produces": [
+        "DebtInventory"
+      ],
+      "requires": [],
+      "optional": [
+        "architecture-review"
+      ],
+      "triggerPredicates": [
+        "debt_baseline_missing == true",
+        "planning_cycle_start == true"
+      ],
+      "exclusiveWith": [],
+      "requiresSkillVersion": ">=1.0",
+      "path": "quality/ponytail-audit/SKILL.md"
+    },
+    {
+      "name": "ponytail-debt",
+      "title": "Ponytail Debt Ledger",
+      "category": "quality",
+      "priority": "medium",
+      "estimatedCost": "low",
+      "estimatedLatency": "fast",
+      "estimatedContext": "low",
+      "confidenceThreshold": 0.85,
+      "escalateTo": null,
+      "consumes": [
+        "DebtInventory",
+        "PaydownRecord"
+      ],
+      "produces": [
+        "DebtLedger"
+      ],
+      "requires": [
+        "ponytail-audit"
+      ],
+      "optional": [
+        "ponytail-gain"
+      ],
+      "triggerPredicates": [
+        "new_debt_items_found == true",
+        "paydown_reported == true"
+      ],
+      "exclusiveWith": [],
+      "requiresSkillVersion": ">=1.0",
+      "path": "quality/ponytail-debt/SKILL.md"
+    },
+    {
+      "name": "ponytail-gain",
+      "title": "Ponytail Gain",
+      "category": "quality",
+      "priority": "medium",
+      "estimatedCost": "low",
+      "estimatedLatency": "fast",
+      "estimatedContext": "low",
+      "confidenceThreshold": 0.85,
+      "escalateTo": null,
+      "consumes": [
+        "ExecutionResult",
+        "DebtLedger"
+      ],
+      "produces": [
+        "PaydownRecord"
+      ],
+      "requires": [
+        "ponytail-debt"
+      ],
+      "optional": [],
+      "triggerPredicates": [
+        "workaround_resolved == true",
+        "todo_resolved == true"
+      ],
+      "exclusiveWith": [],
+      "requiresSkillVersion": ">=1.0",
+      "path": "quality/ponytail-gain/SKILL.md"
+    },
+    {
+      "name": "ponytail-review",
+      "title": "Ponytail Review",
+      "category": "quality",
+      "priority": "high",
+      "estimatedCost": "high",
+      "estimatedLatency": "slow",
+      "estimatedContext": "medium",
+      "confidenceThreshold": 0.9,
+      "escalateTo": null,
+      "consumes": [
+        "ExecutionResult",
+        "RepositoryMap"
+      ],
+      "produces": [
+        "ReviewVerdict"
+      ],
+      "requires": [],
+      "optional": [
+        "architecture-review"
+      ],
+      "triggerPredicates": [
+        "change_risk == high",
+        "shared_code_touched == true"
+      ],
+      "exclusiveWith": [
+        "caveman-review"
+      ],
+      "requiresSkillVersion": ">=1.0",
+      "path": "quality/ponytail-review/SKILL.md"
+    },
+    {
+      "name": "security-audit",
+      "title": "Security Audit",
+      "category": "quality",
+      "priority": "critical",
+      "estimatedCost": "medium",
+      "estimatedLatency": "medium",
+      "estimatedContext": "medium",
+      "confidenceThreshold": 0.9,
+      "escalateTo": "ponytail-review",
+      "consumes": [
+        "ExecutionResult"
+      ],
+      "produces": [
+        "SecurityFindings"
+      ],
+      "requires": [],
+      "optional": [
+        "dependency-audit"
+      ],
+      "triggerPredicates": [
+        "handles_user_input == true",
+        "handles_secrets == true",
+        "handles_auth == true"
+      ],
+      "exclusiveWith": [],
+      "requiresSkillVersion": ">=1.0",
+      "path": "quality/security-audit/SKILL.md"
+    },
+    {
+      "name": "self-review",
+      "title": "Self Review",
+      "category": "quality",
+      "priority": "critical",
+      "estimatedCost": "low",
+      "estimatedLatency": "fast",
+      "estimatedContext": "low",
+      "confidenceThreshold": 0.8,
+      "escalateTo": "ponytail-review",
+      "consumes": [
+        "ExecutionResult",
+        "RawRequest"
+      ],
+      "produces": [
+        "ReviewVerdict"
+      ],
+      "requires": [],
+      "optional": [
+        "documentation-sync"
+      ],
+      "triggerPredicates": [
+        "work_marked_complete == true"
+      ],
+      "exclusiveWith": [],
+      "requiresSkillVersion": ">=1.0",
+      "path": "quality/self-review/SKILL.md"
+    },
+    {
+      "name": "bluf",
+      "title": "BLUF (Bottom Line Up Front)",
+      "category": "utilities",
+      "priority": "low",
+      "estimatedCost": "low",
+      "estimatedLatency": "fast",
+      "estimatedContext": "low",
+      "confidenceThreshold": 0.8,
+      "escalateTo": null,
+      "consumes": [
+        "DraftResponse"
+      ],
+      "produces": [
+        "ReorderedResponse"
+      ],
+      "requires": [],
+      "optional": [],
+      "triggerPredicates": [
+        "response_paragraphs > 2",
+        "direct_question == true"
+      ],
+      "exclusiveWith": [],
+      "requiresSkillVersion": ">=1.0",
+      "path": "utilities/bluf/SKILL.md"
+    },
+    {
+      "name": "caveman-commit",
+      "title": "Caveman Commit",
+      "category": "utilities",
+      "priority": "low",
+      "estimatedCost": "low",
+      "estimatedLatency": "fast",
+      "estimatedContext": "low",
+      "confidenceThreshold": 0.8,
+      "escalateTo": null,
+      "consumes": [
+        "ExecutionResult"
+      ],
+      "produces": [
+        "CommitMessage"
+      ],
+      "requires": [],
+      "optional": [],
+      "triggerPredicates": [
+        "commit_message_pending == true"
+      ],
+      "exclusiveWith": [],
+      "requiresSkillVersion": ">=1.0",
+      "path": "utilities/caveman-commit/SKILL.md"
+    },
+    {
+      "name": "caveman-compress",
+      "title": "Caveman Compress",
+      "category": "utilities",
+      "priority": "medium",
+      "estimatedCost": "low",
+      "estimatedLatency": "fast",
+      "estimatedContext": "low",
+      "confidenceThreshold": 0.8,
+      "escalateTo": null,
+      "consumes": [
+        "VerboseContent"
+      ],
+      "produces": [
+        "CompressedContent"
+      ],
+      "requires": [],
+      "optional": [
+        "context-manager",
+        "token-budget"
+      ],
+      "triggerPredicates": [
+        "content_length_tokens > 2000"
+      ],
+      "exclusiveWith": [],
+      "requiresSkillVersion": ">=1.0",
+      "path": "utilities/caveman-compress/SKILL.md"
+    },
+    {
+      "name": "caveman-help",
+      "title": "Caveman Family Help",
+      "category": "utilities",
+      "priority": "low",
+      "estimatedCost": "low",
+      "estimatedLatency": "fast",
+      "estimatedContext": "low",
+      "confidenceThreshold": 0.8,
+      "escalateTo": null,
+      "consumes": [
+        "HelpQuery"
+      ],
+      "produces": [
+        "SkillIndex"
+      ],
+      "requires": [],
+      "optional": [
+        "ponytail-help"
+      ],
+      "triggerPredicates": [
+        "query_matches_family == caveman"
+      ],
+      "exclusiveWith": [],
+      "requiresSkillVersion": ">=1.0",
+      "path": "utilities/caveman-help/SKILL.md"
+    },
+    {
+      "name": "caveman-stats",
+      "title": "Caveman Stats",
+      "category": "utilities",
+      "priority": "low",
+      "estimatedCost": "low",
+      "estimatedLatency": "fast",
+      "estimatedContext": "low",
+      "confidenceThreshold": 0.8,
+      "escalateTo": null,
+      "consumes": [
+        "UsageLog"
+      ],
+      "produces": [
+        "StatsReport"
+      ],
+      "requires": [],
+      "optional": [],
+      "triggerPredicates": [
+        "stats_requested == true"
+      ],
+      "exclusiveWith": [],
+      "requiresSkillVersion": ">=1.0",
+      "path": "utilities/caveman-stats/SKILL.md"
+    },
+    {
+      "name": "karpathy-guidelines",
+      "title": "Karpathy Guidelines",
+      "category": "utilities",
+      "priority": "medium",
+      "estimatedCost": "low",
+      "estimatedLatency": "fast",
+      "estimatedContext": "low",
+      "confidenceThreshold": 0.75,
+      "escalateTo": "self-review",
+      "consumes": [
+        "ExecutionResult"
+      ],
+      "produces": [
+        "SimplicityFindings"
+      ],
+      "requires": [],
+      "optional": [
+        "self-review",
+        "architecture-review"
+      ],
+      "triggerPredicates": [
+        "code_generated == true"
+      ],
+      "exclusiveWith": [],
+      "requiresSkillVersion": ">=1.0",
+      "path": "utilities/karpathy-guidelines/SKILL.md"
+    },
+    {
+      "name": "ponytail-help",
+      "title": "Ponytail Family Help",
+      "category": "utilities",
+      "priority": "low",
+      "estimatedCost": "low",
+      "estimatedLatency": "fast",
+      "estimatedContext": "low",
+      "confidenceThreshold": 0.8,
+      "escalateTo": null,
+      "consumes": [
+        "HelpQuery"
+      ],
+      "produces": [
+        "SkillIndex"
+      ],
+      "requires": [],
+      "optional": [
+        "caveman-help"
+      ],
+      "triggerPredicates": [
+        "query_matches_family == ponytail"
+      ],
+      "exclusiveWith": [],
+      "requiresSkillVersion": ">=1.0",
+      "path": "utilities/ponytail-help/SKILL.md"
+    },
+    {
+      "name": "skill-creator",
+      "title": "Skill Creator",
+      "category": "utilities",
+      "priority": "low",
+      "estimatedCost": "medium",
+      "estimatedLatency": "medium",
+      "estimatedContext": "low",
+      "confidenceThreshold": 0.8,
+      "escalateTo": null,
+      "consumes": [
+        "RecurringTaskPattern"
+      ],
+      "produces": [
+        "NewSkillDefinition"
+      ],
+      "requires": [],
+      "optional": [
+        "caveman-help",
+        "ponytail-help"
+      ],
+      "triggerPredicates": [
+        "task_recurrence_detected == true"
+      ],
+      "exclusiveWith": [],
+      "requiresSkillVersion": ">=1.0",
+      "path": "utilities/skill-creator/SKILL.md"
+    }
+  ]
+}
