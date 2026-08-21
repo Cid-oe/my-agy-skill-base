@@ -1,0 +1,122 @@
+"use strict";
+/**
+ * Concrete implementation of the AGY Kernel composition root.
+ * Enforces Phase 5 dependency-ordered startup and graceful drain/shutdown.
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.Kernel = void 0;
+const node_crypto_1 = require("node:crypto");
+const shared_1 = require("@agy/shared");
+class Kernel {
+    _state = 'uninitialized';
+    _kernelId = (0, node_crypto_1.randomUUID)();
+    _container = new shared_1.Container();
+    _subsystems = [];
+    _config = {};
+    _bootedAt = 0;
+    constructor(container) {
+        if (container) {
+            this._container = container;
+        }
+    }
+    get state() {
+        return this._state;
+    }
+    getContainer() {
+        return this._container;
+    }
+    registerSubsystem(subsystem) {
+        if (this._state !== 'uninitialized') {
+            throw new shared_1.AgyError(`Cannot register subsystem '${subsystem.name}' while kernel is in state '${this._state}'`, { code: 'INVALID_STATE', subsystem: 'kernel', retryable: false });
+        }
+        this._subsystems.push(subsystem);
+    }
+    async boot(config = {}) {
+        if (this._state === 'ready') {
+            return this.createHandle();
+        }
+        if (this._state !== 'uninitialized' && this._state !== 'shutdown') {
+            throw new shared_1.AgyError(`Cannot boot kernel from state '${this._state}'`, {
+                code: 'INVALID_STATE',
+                subsystem: 'kernel',
+                retryable: false,
+            });
+        }
+        this._config = config;
+        this._kernelId = config.kernelId || (0, node_crypto_1.randomUUID)();
+        this._state = 'booting';
+        this._bootedAt = Date.now();
+        try {
+            // Step 1: Initialize container configuration
+            this._container.register('config', this._config);
+            this._container.register('kernelId', this._kernelId);
+            // Step 2-8: Sequential dependency-ordered subsystem boot
+            for (const subsystem of this._subsystems) {
+                await subsystem.boot();
+                this._container.register(subsystem.name, subsystem);
+            }
+            this._state = 'ready';
+            return this.createHandle();
+        }
+        catch (err) {
+            this._state = 'degraded';
+            const msg = err instanceof Error ? err.message : String(err);
+            throw new shared_1.AgyError(`Kernel boot failed: ${msg}`, {
+                code: 'BOOT_FAILED',
+                subsystem: 'kernel',
+                retryable: false,
+                details: { originalError: msg },
+            });
+        }
+    }
+    async shutdown() {
+        if (this._state === 'shutdown') {
+            return; // idempotent shutdown per Phase 3
+        }
+        this._state = 'draining';
+        // Reverse order shutdown per Phase 5
+        const reversed = [...this._subsystems].reverse();
+        for (const subsystem of reversed) {
+            try {
+                await subsystem.shutdown();
+            }
+            catch (err) {
+                // Log & proceed to guarantee all subsystems get shutdown chance
+                console.error(`Error shutting down subsystem ${subsystem.name}:`, err);
+            }
+        }
+        this._state = 'shutdown';
+    }
+    async health() {
+        const report = {
+            kernel: {
+                status: this._state === 'ready' ? 'healthy' : this._state === 'degraded' ? 'degraded' : 'unhealthy',
+                uptimeMs: this._bootedAt ? Date.now() - this._bootedAt : 0,
+            },
+        };
+        for (const subsystem of this._subsystems) {
+            try {
+                report[subsystem.name] = await subsystem.health();
+            }
+            catch (err) {
+                report[subsystem.name] = {
+                    status: 'unhealthy',
+                    lastError: err instanceof Error ? err.message : String(err),
+                    uptimeMs: 0,
+                };
+            }
+        }
+        return report;
+    }
+    createHandle() {
+        return {
+            kernelId: this._kernelId,
+            state: this._state,
+            container: this._container,
+            shutdown: () => this.shutdown(),
+            health: () => this.health(),
+        };
+    }
+}
+exports.Kernel = Kernel;
+//# sourceMappingURL=kernel.js.map

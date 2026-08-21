@@ -1,0 +1,156 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SkillManifest",
+  "type": "object",
+  "required": ["id", "name", "version", "description", "priority", "entryPoint"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{1,63}$"
+    },
+    "name": {
+      "type": "string",
+      "maxLength": 128
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$"
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 2048
+    },
+    "author": {
+      "type": "string",
+      "default": "unknown"
+    },
+    "license": {
+      "type": "string",
+      "default": "UNSPECIFIED"
+    },
+    "priority": {
+      "type": "string",
+      "enum": ["critical", "high", "medium", "low"]
+    },
+    "requires": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": []
+    },
+    "optional": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": []
+    },
+    "consumes": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": []
+    },
+    "produces": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": []
+    },
+    "exclusiveWith": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": []
+    },
+    "estimatedCost": {
+      "type": "string",
+      "enum": ["low", "medium", "high"],
+      "default": "medium"
+    },
+    "estimatedLatency": {
+      "type": "string",
+      "enum": ["fast", "medium", "slow"],
+      "default": "medium"
+    },
+    "estimatedContext": {
+      "type": "string",
+      "enum": ["low", "medium", "high"],
+      "default": "medium"
+    },
+    "confidenceThreshold": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 1.0,
+      "default": 0.75
+    },
+    "escalateTo": {
+      "type": ["string", "null"],
+      "default": null
+    },
+    "triggerPredicates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["variable", "operator", "value"],
+        "properties": {
+          "variable": { "type": "string" },
+          "operator": { "type": "string", "enum": [">", "<", ">=", "<=", "==", "!="] },
+          "value": { "type": ["string", "number", "boolean"] }
+        }
+      },
+      "default": []
+    },
+    "permissions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "scope"],
+        "properties": {
+          "name": { "type": "string" },
+          "scope": { "type": "string" },
+          "constraints": { "type": "object" }
+        }
+      },
+      "default": []
+    },
+    "capabilities": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": []
+    },
+    "entryPoint": {
+      "type": "string"
+    },
+    "hooks": {
+      "type": "object",
+      "properties": {
+        "onLoad": { "type": ["string", "null"] },
+        "onUnload": { "type": ["string", "null"] },
+        "onValidate": { "type": ["string", "null"] }
+      },
+      "default": {}
+    },
+    "requiresSkillVersion": {
+      "type": "string",
+      "default": "*"
+    },
+    "minAgyVersion": {
+      "type": "string",
+      "default": "0.0.0"
+    },
+    "deprecated": {
+      "type": "boolean",
+      "default": false
+    },
+    "deprecatedReason": {
+      "type": ["string", "null"],
+      "default": null
+    },
+    "supersededBy": {
+      "type": ["string", "null"],
+      "default": null
+    },
+    "checksum": {
+      "type": "string"
+    },
+    "signature": {
+      "type": ["string", "null"],
+      "default": null
+    }
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "name": "agy-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AGY AI Operating System Monorepo",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "test": "node scripts/run-tests.mjs",
+    "typecheck": "tsc -b --noEmit",
+    "clean": "node -e \"const fs=require('fs'); fs.rmSync('dist',{recursive:true,force:true});\""
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.1",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

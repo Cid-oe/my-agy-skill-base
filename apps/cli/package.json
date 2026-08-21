@@ -1,0 +1,26 @@
+{
+  "name": "@agy/cli",
+  "version": "0.1.0",
+  "bin": {
+    "agy": "dist/bin.js"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "dependencies": {
+    "@agy/shared": "*",
+    "@agy/kernel": "*",
+    "@agy/event-bus": "*",
+    "@agy/runtime-state": "*",
+    "@agy/artifact": "*",
+    "@agy/policy": "*",
+    "@agy/registry": "*",
+    "@agy/resolver": "*",
+    "@agy/scheduler": "*",
+    "@agy/executor": "*",
+    "@agy/reflection": "*"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "test": "node --test dist/**/*.test.js"
+  }
+}

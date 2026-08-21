@@ -1,0 +1,39 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "strict": true,
+    "noImplicitAny": true,
+    "strictNullChecks": true,
+    "strictFunctionTypes": true,
+    "noImplicitThis": true,
+    "alwaysStrict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true
+  },
+  "files": [],
+  "references": [
+    { "path": "./packages/shared" },
+    { "path": "./packages/event-bus" },
+    { "path": "./packages/runtime-state" },
+    { "path": "./packages/artifact" },
+    { "path": "./packages/policy" },
+    { "path": "./packages/registry" },
+    { "path": "./packages/resolver" },
+    { "path": "./packages/scheduler" },
+    { "path": "./packages/executor" },
+    { "path": "./packages/reflection" },
+    { "path": "./packages/kernel" },
+    { "path": "./packages/testkit" },
+    { "path": "./apps/cli" },
+    { "path": "./apps/playground" }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "name": "@agy/testkit",
+  "version": "0.1.0",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "dependencies": {
+    "@agy/shared": "*",
+    "@agy/kernel": "*",
+    "@agy/registry": "*",
+    "@agy/resolver": "*",
+    "@agy/scheduler": "*",
+    "@agy/executor": "*",
+    "@agy/artifact": "*",
+    "@agy/policy": "*",
+    "@agy/runtime-state": "*",
+    "@agy/event-bus": "*"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "test": "node --test dist/**/*.test.js"
+  }
+}

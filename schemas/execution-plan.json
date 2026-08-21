@@ -1,0 +1,62 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ExecutionPlan",
+  "type": "object",
+  "required": ["planId", "nodes", "edges", "createdAt", "status"],
+  "properties": {
+    "planId": { "type": "string", "format": "uuid" },
+    "nodes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["nodeId", "skillRef", "inputs", "limits", "state"],
+        "properties": {
+          "nodeId": { "type": "string", "format": "uuid" },
+          "skillRef": {
+            "type": "object",
+            "required": ["id", "version", "registryRef", "lifecycleState"],
+            "properties": {
+              "id": { "type": "string" },
+              "version": { "type": "string" },
+              "registryRef": { "type": "string" },
+              "lifecycleState": { "type": "string" }
+            }
+          },
+          "inputs": {
+            "type": "array",
+            "items": { "$ref": "artifact-envelope.json" }
+          },
+          "limits": {
+            "type": "object",
+            "properties": {
+              "maxDurationMs": { "type": "number" },
+              "maxMemoryMb": { "type": "number" },
+              "maxCpuPercent": { "type": "number" }
+            }
+          },
+          "state": {
+            "type": "string",
+            "enum": ["waiting", "ready", "running", "done", "error"]
+          }
+        }
+      }
+    },
+    "edges": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["fromNodeId", "toNodeId", "kind"],
+        "properties": {
+          "fromNodeId": { "type": "string", "format": "uuid" },
+          "toNodeId": { "type": "string", "format": "uuid" },
+          "kind": { "type": "string", "enum": ["data", "ordering", "exclusion"] }
+        }
+      }
+    },
+    "createdAt": { "type": "number" },
+    "status": {
+      "type": "string",
+      "enum": ["pending", "running", "completed", "failed", "cancelled"]
+    }
+  }
+}

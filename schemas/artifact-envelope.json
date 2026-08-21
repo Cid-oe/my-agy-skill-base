@@ -1,0 +1,22 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ArtifactEnvelope",
+  "type": "object",
+  "required": ["hash", "size", "mimeType", "createdBy", "refCount", "createdAt"],
+  "properties": {
+    "hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "size": { "type": "integer", "minimum": 0 },
+    "mimeType": { "type": "string" },
+    "createdBy": {
+      "type": "object",
+      "required": ["id", "version"],
+      "properties": {
+        "id": { "type": "string" },
+        "version": { "type": "string" }
+      }
+    },
+    "refCount": { "type": "integer", "minimum": 0 },
+    "createdAt": { "type": "number" },
+    "metadata": { "type": "object" }
+  }
+}

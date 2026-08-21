@@ -1,0 +1,15 @@
+{
+  "name": "@agy/artifact",
+  "version": "0.1.0",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "dependencies": {
+    "@agy/shared": "*",
+    "@agy/kernel": "*",
+    "@agy/event-bus": "*"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "test": "node --test dist/**/*.test.js"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "name": "@agy/event-bus",
+  "version": "0.1.0",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "dependencies": {
+    "@agy/shared": "*",
+    "@agy/kernel": "*"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "test": "node --test dist/**/*.test.js"
+  }
+}
