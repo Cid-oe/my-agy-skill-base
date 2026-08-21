@@ -1,6 +1,14 @@
 # AGY handoff
 
-## Current state (updated 2026-08-21 — Phase 0 complete)
+## Current state (updated 2026-08-21 — Phase 0 complete; final design review issued)
+
+**Final Design Review verdict (2026-08-21): READY WITH MINOR AMENDMENTS —
+see
+[`docs/architecture/2026-08-21-final-design-review.md`](docs/architecture/2026-08-21-final-design-review.md).
+Conditions: ratify the A1 amendment pack **and** issue Amendment Schedule B
+(B1–B11, specified in the review) as A2 amendments at Gate G0. No
+architectural rework required; first code commit is authorized upon G0
+completion.**
 
 The corpus has been reconciled (Phase 0). Entry point is
 [`docs/rfcs/RFC-0000.md`](docs/rfcs/RFC-0000.md): it holds the RFC status
