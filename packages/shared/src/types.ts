@@ -124,6 +124,8 @@ export interface PlanNode {
    * lease and the executor can enforce it (SRC-5).
    */
   requiredCapabilities?: Capability[];
+  /** Skill manifest priority, used by the scheduler for dispatch ordering. */
+  priority?: 'critical' | 'high' | 'medium' | 'low';
 }
 
 export interface PlanEdge {

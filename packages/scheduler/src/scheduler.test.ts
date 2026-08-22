@@ -196,8 +196,8 @@ test('Scheduler dispatches independent DAG branches concurrently (Diamond DAG)',
   await scheduler.shutdown();
 });
 
-test('Scheduler elevates task dispatch priority via enqueue aging', async () => {
-  const scheduler = new Scheduler({ agingFactorMs: 1 }); // 1ms aging rate
+test('Scheduler dispatches by manifest priority under bounded concurrency (SRC-8, SRC-9)', async () => {
+  const scheduler = new Scheduler({ maxConcurrentDispatch: 1, agingFactorMs: 1000 });
   await scheduler.boot();
 
   const dispatched: string[] = [];
@@ -205,21 +205,34 @@ test('Scheduler elevates task dispatch priority via enqueue aging', async () => 
     dispatched.push(node.skillRef.id);
   });
 
+  const mk = (id: string, priority: 'low' | 'medium' | 'high'): PlanNode => ({
+    nodeId: asUUID(id),
+    skillRef: { id, version: asSemVer('1.0.0'), registryRef: 'r', lifecycleState: 'loaded' },
+    inputs: [],
+    limits: {},
+    state: 'ready',
+    priority,
+  });
+
   const plan: ExecutionPlan = {
-    planId: asUUID('plan-aging'),
-    createdAt: Date.now() - 5000, // Aged plan (old)
+    planId: asUUID('plan-priority'),
+    createdAt: Date.now(),
     status: 'pending',
-    nodes: [
-      { nodeId: asUUID('node-old-low'), skillRef: { id: 'old-low-priority', version: asSemVer('1.0.0'), registryRef: 'r', lifecycleState: 'loaded' }, inputs: [], limits: {}, state: 'ready' },
-    ],
+    nodes: [mk('low-s', 'low'), mk('high-s', 'high'), mk('med-s', 'medium')],
     edges: [],
   };
 
   await scheduler.submit(plan);
-  await scheduler.tick();
 
-  assert.strictEqual(dispatched.length, 1);
-  assert.strictEqual(dispatched[0], 'old-low-priority');
+  // With maxConcurrentDispatch=1, nodes must be dispatched in priority order
+  // (high -> medium -> low), not the previous id.startsWith('sec') heuristic.
+  let guard = 0;
+  while (scheduler.getPlanStatus(asUUID('plan-priority')) === 'running' && guard < 20) {
+    await scheduler.tick();
+    guard++;
+  }
+  assert.strictEqual(scheduler.getPlanStatus(asUUID('plan-priority')), 'completed');
+  assert.deepStrictEqual(dispatched, ['high-s', 'med-s', 'low-s']);
 
   await scheduler.shutdown();
 });

@@ -419,6 +419,7 @@ export class SkillResolver implements ISkillResolver {
         confidenceThreshold: s.confidenceThreshold,
         fallbackChain: fallbackMap.get(s.id) || [],
         requiredCapabilities: s.permissions ? [...s.permissions] : [],
+        priority: s.priority,
       };
     });
 
