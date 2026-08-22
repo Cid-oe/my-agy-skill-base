@@ -3,6 +3,8 @@ import assert from 'node:assert';
 import { Executor } from './executor.js';
 import { SkillRegistry, SkillLoader } from '@agy/registry';
 import { ArtifactStore } from '@agy/artifact';
+import { PolicyEngine } from '@agy/policy';
+import { RuntimeState } from '@agy/runtime-state';
 import { EventBus } from '@agy/event-bus';
 import { ICancellationToken, SkillManifest, TaskContext, asUUID, asSemVer } from '@agy/shared';
 
@@ -179,4 +181,60 @@ test('Executor enforces timeouts and frees worker slot immediately', async () =>
   await executor.shutdown();
   await loader.shutdown();
   await registry.shutdown();
+});
+
+test('Executor enforces policy lease coverage of required capabilities (SRC-5, SRC-6)', async () => {
+  const state = new RuntimeState();
+  await state.boot();
+  const policy = new PolicyEngine({ runtimeState: state });
+  await policy.boot();
+
+  const permSkill: SkillManifest = {
+    ...sampleSkill,
+    id: 'perm-skill',
+    permissions: [{ name: 'fs:read', scope: '/project' }],
+  };
+
+  const registry = new SkillRegistry();
+  await registry.boot();
+  await registry.register(permSkill);
+
+  const loader = new SkillLoader({ registry });
+  await loader.boot();
+
+  const executor = new Executor({ skillLoader: loader, policyEngine: policy });
+  await executor.boot();
+
+  const baseTask = (leaseId: string): TaskContext => ({
+    taskId: asUUID('task-perm'),
+    nodeId: asUUID('node-perm'),
+    planId: asUUID('plan-perm'),
+    lease: {
+      leaseId: asUUID(leaseId),
+      subject: 'perm-skill',
+      capabilities: [],
+      issuedAt: Date.now(),
+      expiresAt: Date.now() + 60000,
+      revoked: false,
+    },
+    cancellationToken: { isCancellationRequested: false, onCancelled: () => {} },
+  });
+
+  // Lease that does NOT cover the required /project scope -> must be denied.
+  const deniedLease = await policy.issueLease('perm-skill', [{ name: 'fs:read', scope: '/elsewhere' }], 60000);
+  await assert.rejects(
+    async () => executor.execute(baseTask(deniedLease.leaseId)),
+    (err: any) => err.code === 'LEASE_VALIDATION_FAILED'
+  );
+
+  // Lease that DOES cover the required scope -> must succeed.
+  const grantedLease = await policy.issueLease('perm-skill', [{ name: 'fs:read', scope: '/project' }], 60000);
+  const result = await executor.execute(baseTask(grantedLease.leaseId));
+  assert.strictEqual(result.taskId, asUUID('task-perm'));
+
+  await executor.shutdown();
+  await loader.shutdown();
+  await registry.shutdown();
+  await policy.shutdown();
+  await state.shutdown();
 });

@@ -8,6 +8,7 @@ import { randomUUID } from 'node:crypto';
 import { ExecutionPlan, ICancellationToken, PlanNode, PlanEdge, SubsystemHealth, TaskContext, UUID, asUUID, AgyError } from '@agy/shared';
 import { IEventBus } from '@agy/event-bus';
 import { IRuntimeState } from '@agy/runtime-state';
+import { IPolicyEngine } from '@agy/policy';
 import { IScheduler, TaskDispatcher } from './interfaces.js';
 
 interface QueuedTask {
@@ -41,6 +42,7 @@ class SimpleCancellationToken implements ICancellationToken {
 export interface SchedulerOptions {
   eventBus?: IEventBus;
   runtimeState?: IRuntimeState;
+  policyEngine?: IPolicyEngine;
   agingFactorMs?: number;
 }
 
@@ -71,10 +73,12 @@ export class Scheduler implements IScheduler {
   private _agingFactorMs = 5000;
   private _eventBus?: IEventBus;
   private _runtimeState?: IRuntimeState;
+  private _policyEngine?: IPolicyEngine;
 
   constructor(options: SchedulerOptions = {}) {
     this._eventBus = options.eventBus;
     this._runtimeState = options.runtimeState;
+    this._policyEngine = options.policyEngine;
     if (options.agingFactorMs) {
       this._agingFactorMs = options.agingFactorMs;
     }
@@ -211,18 +215,30 @@ export class Scheduler implements IScheduler {
         item.node.state = 'running';
         const cancellationToken = this._planTokens.get(planId) || new SimpleCancellationToken();
 
+        // When a policy engine is available, mint a real, registered lease for
+        // the node's required capabilities so the executor can enforce it
+        // (SRC-5). Otherwise fall back to an unregistered placeholder lease.
+        const ttl = item.node.limits.maxDurationMs || 60000;
+        const lease = this._policyEngine
+          ? await this._policyEngine.issueLease(
+              item.node.skillRef.id,
+              item.node.requiredCapabilities ?? [],
+              ttl
+            )
+          : {
+              leaseId: asUUID(randomUUID()),
+              subject: item.node.skillRef.id,
+              capabilities: [],
+              issuedAt: now,
+              expiresAt: now + ttl,
+              revoked: false,
+            };
+
         const taskContext: TaskContext = {
           taskId: item.taskId,
           nodeId: item.node.nodeId,
           planId: item.planId,
-          lease: {
-            leaseId: asUUID(randomUUID()),
-            subject: item.node.skillRef.id,
-            capabilities: [],
-            issuedAt: now,
-            expiresAt: now + (item.node.limits.maxDurationMs || 60000),
-            revoked: false,
-          },
+          lease,
           cancellationToken,
         };
 

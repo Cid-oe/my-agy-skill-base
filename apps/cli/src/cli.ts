@@ -38,10 +38,11 @@ export async function createCliRuntime(): Promise<CliRuntime> {
   const registry = new SkillRegistry({ eventBus: bus });
   const loader = new SkillLoader({ registry, eventBus: bus });
   const resolver = new SkillResolver();
-  const scheduler = new Scheduler({ eventBus: bus, runtimeState: state });
+  const scheduler = new Scheduler({ eventBus: bus, runtimeState: state, policyEngine: policy });
   const executor = new Executor({
     skillLoader: loader,
     artifactStore: store,
+    policyEngine: policy,
     eventBus: bus,
   });
   const reflection = new ReflectionEngine({ runtimeState: state });

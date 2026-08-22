@@ -111,6 +111,12 @@ export interface PlanNode {
   selectionReason?: string;
   fallbackChain?: string[];
   confidenceThreshold?: number;
+  /**
+   * Capabilities the skill declares it requires (mirrors manifest.permissions).
+   * Populated by the resolver so the scheduler can mint an appropriately-scoped
+   * lease and the executor can enforce it (SRC-5).
+   */
+  requiredCapabilities?: Capability[];
 }
 
 export interface PlanEdge {

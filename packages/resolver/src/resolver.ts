@@ -418,6 +418,7 @@ export class SkillResolver implements ISkillResolver {
         selectionReason: `Selected via highest priority ranking`,
         confidenceThreshold: s.confidenceThreshold,
         fallbackChain: fallbackMap.get(s.id) || [],
+        requiredCapabilities: s.permissions ? [...s.permissions] : [],
       };
     });
 

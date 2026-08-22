@@ -120,22 +120,28 @@ export class Executor implements IExecutor {
         });
       }
 
-      if (this._policyEngine && task.lease.capabilities.length > 0) {
-        for (const cap of task.lease.capabilities) {
-          const valid = await this._policyEngine.validateLease(task.lease.leaseId, cap);
-          if (!valid) {
-            throw new AgyError(`Lease ${task.lease.leaseId} capability ${cap.name} validation failed`, {
-              code: 'LEASE_VALIDATION_FAILED',
-              subsystem: 'executor',
-              retryable: false,
-            });
-          }
-        }
-      }
-
       const skill = await this._skillLoader.acquire(task.lease.subject);
 
       try {
+        // Enforce that the task lease covers every capability the skill
+        // declares it requires (manifest.permissions). Previously this check
+        // was gated on `task.lease.capabilities.length > 0`, but the scheduler
+        // issued empty-capability leases, so it was never reachable (SRC-5).
+        if (this._policyEngine) {
+          for (const required of skill.manifest.permissions ?? []) {
+            const granted = await this._policyEngine.validateLease(task.lease.leaseId, required);
+            if (!granted) {
+              throw new AgyError(
+                `Lease ${task.lease.leaseId} does not cover required capability ${required.name} (${required.scope})`,
+                {
+                  code: 'LEASE_VALIDATION_FAILED',
+                  subsystem: 'executor',
+                  retryable: false,
+                }
+              );
+            }
+          }
+        }
         const executionPromise = skill.execute({
           taskId: task.taskId,
           planId: task.planId,
