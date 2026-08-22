@@ -11,6 +11,7 @@ export interface EventBusOptions {
   maxRetries?: number;           // Defaults to 3
   backoffBaseMs?: number;        // Defaults to 50ms
   maxDeadLetters?: number;       // Defaults to 500
+  shutdownDrainMs?: number;      // Defaults to 5000ms; bounds shutdown drain
 }
 
 export interface IEventBus extends ISubsystem {
