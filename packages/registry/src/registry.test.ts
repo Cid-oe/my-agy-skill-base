@@ -157,6 +157,31 @@ test('SkillRegistry enforces manifest schema validation on register (SRC-16)', a
   await registry.shutdown();
 });
 
+test('SkillLoader enforces the drain timeout for unloading in-flight skills (SRC-18)', async () => {
+  const registry = new SkillRegistry();
+  await registry.boot();
+  await registry.register(sampleManifest);
+
+  const loader = new SkillLoader({ registry, drainTimeoutMs: 50 });
+  await loader.boot();
+
+  // Acquire an in-flight reference and unload. The skill enters 'draining'
+  // without blocking, then is force-disposed after the drain timeout elapses.
+  const instance = await loader.acquire('security-audit');
+  assert.strictEqual(instance.refCount, 1);
+
+  const result = await loader.unload('security-audit');
+  assert.strictEqual(result, true);
+  assert.strictEqual(instance.handle.lifecycleState, 'draining');
+
+  // After the drain deadline, the background timer disposes the skill.
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  assert.strictEqual(instance.handle.lifecycleState, 'unloaded');
+
+  await loader.shutdown();
+  await registry.shutdown();
+});
+
 test('SkillRegistry scans directory roots for manifests', async () => {
   const os = await import('node:os');
   const path = await import('node:path');
