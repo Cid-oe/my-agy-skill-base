@@ -55,3 +55,42 @@ test('CLI skill install and run executes full end-to-end workflow', async () => 
 
   await rt.kernel.shutdown();
 });
+
+test('CLI run drives a multi-stage dependency plan to completion (EX-2)', async () => {
+  const rt = await createCliRuntime();
+
+  const stage1: SkillManifest = {
+    id: 'cli-stage-1',
+    name: 'Stage 1',
+    version: asSemVer('1.0.0'),
+    description: 'First pipeline stage',
+    priority: 'medium',
+    requires: [],
+    optional: [],
+    consumes: [],
+    produces: ['CliArt-1'],
+    exclusiveWith: [],
+    confidenceThreshold: 0.8,
+    triggerPredicates: [],
+    permissions: [],
+    capabilities: ['stage'],
+    entryPoint: 'index.ts',
+  };
+  const stage2: SkillManifest = {
+    ...stage1,
+    id: 'cli-stage-2',
+    name: 'Stage 2',
+    requires: ['cli-stage-1'],
+    produces: ['CliArt-2'],
+  };
+
+  await rt.registry.register(stage1);
+  await rt.registry.register(stage2);
+
+  // `run` must advance the pull-based scheduler across both dependency waves.
+  const runRes = await handleCliCommand(['run', 'pipeline', 'CliArt-2'], rt);
+  assert.strictEqual(runRes.success, true);
+  assert.strictEqual(runRes.output.includes('status: completed'), true);
+
+  await rt.kernel.shutdown();
+});

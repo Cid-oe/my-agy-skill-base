@@ -147,9 +147,9 @@ test('SkillResolver backtracks to alternate candidates upon exclusivity conflict
   await registry.boot();
 
   // Primary candidates conflict with each other
-  const candA1: SkillManifest = { ...docSkill, id: 'cand-A1', priority: 'high', produces: ['Out-A'], exclusiveWith: ['cand-B1'] };
-  const candA2: SkillManifest = { ...docSkill, id: 'cand-A2', priority: 'medium', produces: ['Out-A'] };
-  const candB1: SkillManifest = { ...docSkill, id: 'cand-B1', priority: 'high', produces: ['Out-B'], exclusiveWith: ['cand-A1'] };
+  const candA1: SkillManifest = { ...docSkill, id: 'cand-a1', priority: 'high', produces: ['Out-A'], exclusiveWith: ['cand-b1'] };
+  const candA2: SkillManifest = { ...docSkill, id: 'cand-a2', priority: 'medium', produces: ['Out-A'] };
+  const candB1: SkillManifest = { ...docSkill, id: 'cand-b1', priority: 'high', produces: ['Out-B'], exclusiveWith: ['cand-a1'] };
 
   await registry.register(candA1);
   await registry.register(candA2);
@@ -168,10 +168,10 @@ test('SkillResolver backtracks to alternate candidates upon exclusivity conflict
   const res = await resolver.resolve(goal, registry);
   assert.strictEqual(res.status, 'resolved');
   assert.strictEqual(res.plan?.nodes.length, 2);
-  // cand-A2 should have been chosen to avoid exclusivity with cand-B1
+  // cand-a2 should have been chosen to avoid exclusivity with cand-b1
   const nodeIds = res.plan?.nodes.map((n) => n.skillRef.id);
-  assert.strictEqual(nodeIds?.includes('cand-A2'), true);
-  assert.strictEqual(nodeIds?.includes('cand-B1'), true);
+  assert.strictEqual(nodeIds?.includes('cand-a2'), true);
+  assert.strictEqual(nodeIds?.includes('cand-b1'), true);
 
   await resolver.shutdown();
   await registry.shutdown();
@@ -181,8 +181,8 @@ test('SkillResolver detects cycles in dependency graph and rejects plan', async 
   const registry = new SkillRegistry();
   await registry.boot();
 
-  const cycA: SkillManifest = { ...docSkill, id: 'cycle-A', produces: ['CycOut'], requires: ['cycle-B'] };
-  const cycB: SkillManifest = { ...docSkill, id: 'cycle-B', produces: ['CycInternal'], requires: ['cycle-A'] };
+  const cycA: SkillManifest = { ...docSkill, id: 'cycle-a', produces: ['CycOut'], requires: ['cycle-b'] };
+  const cycB: SkillManifest = { ...docSkill, id: 'cycle-b', produces: ['CycInternal'], requires: ['cycle-a'] };
 
   await registry.register(cycA);
   await registry.register(cycB);
@@ -200,6 +200,48 @@ test('SkillResolver detects cycles in dependency graph and rejects plan', async 
   const res = await resolver.resolve(goal, registry);
   assert.strictEqual(res.status, 'unresolvable');
   assert.strictEqual(res.diagnostics[0].includes('Cycle detected'), true);
+
+  await resolver.shutdown();
+  await registry.shutdown();
+});
+
+test('SkillResolver emits data edges for consumed artifacts (SRC-11)', async () => {
+  const registry = new SkillRegistry();
+  await registry.boot();
+
+  const producer: SkillManifest = { ...docSkill, id: 'data-producer', produces: ['SharedArt'] };
+  // Consumer depends on SharedArt via `consumes` (NOT via `requires`).
+  const consumer: SkillManifest = {
+    ...docSkill,
+    id: 'data-consumer',
+    consumes: ['SharedArt'],
+    produces: ['FinalArt'],
+    requires: [],
+  };
+
+  await registry.register(producer);
+  await registry.register(consumer);
+
+  const resolver = new SkillResolver();
+  await resolver.boot();
+
+  const res = await resolver.resolve(
+    { id: 'g-data', kind: 'subtask', description: 'data dependency', requiredArtifacts: ['FinalArt'] },
+    registry
+  );
+
+  assert.strictEqual(res.status, 'resolved');
+  const nodeIds = new Set(res.plan!.nodes.map((n) => n.skillRef.id));
+  assert.strictEqual(nodeIds.has('data-producer'), true);
+  assert.strictEqual(nodeIds.has('data-consumer'), true);
+
+  // A data edge from producer -> consumer must exist.
+  const producerNode = res.plan!.nodes.find((n) => n.skillRef.id === 'data-producer')!;
+  const consumerNode = res.plan!.nodes.find((n) => n.skillRef.id === 'data-consumer')!;
+  const hasDataEdge = res.plan!.edges.some(
+    (e) => e.fromNodeId === producerNode.nodeId && e.toNodeId === consumerNode.nodeId && e.kind === 'data'
+  );
+  assert.strictEqual(hasDataEdge, true, 'expected a data edge from producer to consumer');
 
   await resolver.shutdown();
   await registry.shutdown();
@@ -234,6 +276,41 @@ test('SkillResolver reresolve produces a new immutable plan instance', async () 
   assert.strictEqual(originalPlan.nodes[0].skillRef.id, 'base-skill');
   // New plan has substituted skill
   assert.strictEqual(reresolveRes.plan?.nodes[0].skillRef.id, 'alt-skill');
+
+  await resolver.shutdown();
+  await registry.shutdown();
+});
+
+test('SkillResolver reresolve validates the fallback against the registry (SRC-12)', async () => {
+  const registry = new SkillRegistry();
+  await registry.boot();
+
+  const base: SkillManifest = { ...docSkill, id: 'base-skill-v', produces: ['BaseOutV'] };
+  const alt: SkillManifest = { ...docSkill, id: 'alt-skill-v', version: asSemVer('2.3.0'), produces: ['BaseOutV'] };
+  await registry.register(base);
+  await registry.register(alt);
+
+  const resolver = new SkillResolver();
+  await resolver.boot();
+
+  const res = await resolver.resolve(
+    { id: 'g', kind: 'subtask', description: 'd', requiredArtifacts: ['BaseOutV'] },
+    registry
+  );
+  const plan = res.plan!;
+  // Tamper the fallback chain to reference a non-existent skill.
+  plan.nodes[0].fallbackChain = ['does-not-exist'];
+
+  const bad = await resolver.reresolve(plan, plan.nodes[0].nodeId, {}, registry);
+  assert.strictEqual(bad.status, 'unresolvable');
+  assert.ok(bad.diagnostics.some((d) => d.includes('not registered')));
+
+  // A registered fallback substitutes with the correct version stamp.
+  plan.nodes[0].fallbackChain = ['alt-skill-v'];
+  const good = await resolver.reresolve(plan, plan.nodes[0].nodeId, {}, registry);
+  assert.strictEqual(good.status, 'resolved');
+  assert.strictEqual(good.plan!.nodes[0].skillRef.id, 'alt-skill-v');
+  assert.strictEqual(good.plan!.nodes[0].skillRef.version, asSemVer('2.3.0'));
 
   await resolver.shutdown();
   await registry.shutdown();

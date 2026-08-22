@@ -6,7 +6,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { Event, EventHandler, Subscription, SubsystemHealth, AgyError, UUID, asUUID } from '@agy/shared';
-import { EventBusOptions, IEventBus } from './interfaces.js';
+import { EventBusOptions, EventBusStats, IEventBus } from './interfaces.js';
 
 interface TopicSubscription<T = unknown> {
   id: UUID;
@@ -41,12 +41,14 @@ export class EventBus implements IEventBus {
   private _maxRetries: number;
   private _backoffBaseMs: number;
   private _maxDeadLetters: number;
+  private _shutdownDrainMs: number;
 
   constructor(options: EventBusOptions = {}) {
     this._maxQueueLengthPerKey = options.maxQueueLengthPerKey ?? 1000;
     this._maxRetries = options.maxRetries ?? 3;
     this._backoffBaseMs = options.backoffBaseMs ?? 50;
     this._maxDeadLetters = options.maxDeadLetters ?? 500;
+    this._shutdownDrainMs = options.shutdownDrainMs ?? 5000;
   }
 
   public async start(): Promise<void> {
@@ -67,11 +69,22 @@ export class EventBus implements IEventBus {
   }
 
   public async shutdown(): Promise<void> {
-    // Wait for all in-flight queues to finish
-    while (this._keyQueues.size > 0) {
+    // Stop accepting new publishes FIRST so a continuous producer cannot keep
+    // the queue non-empty and wedge shutdown (EX-6). In-flight republishes now
+    // throw BUS_NOT_READY, which the dispatch path routes to the DLQ.
+    this._isReady = false;
+
+    // Bound the drain so a pathological producer cannot hang shutdown forever.
+    const deadline = Date.now() + this._shutdownDrainMs;
+    while (this._keyQueues.size > 0 && Date.now() < deadline) {
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
-    this._isReady = false;
+
+    // Abandon any undrained queues (e.g. a busy producer) to release memory.
+    for (const queue of this._keyQueues.values()) {
+      queue.items.length = 0;
+    }
+    this._keyQueues.clear();
     this._subscriptions.clear();
   }
 
@@ -88,6 +101,15 @@ export class EventBus implements IEventBus {
 
   public clearDeadLetters(): void {
     this._deadLetterQueue = [];
+  }
+
+  public getStats(): EventBusStats {
+    return {
+      processedCount: this._processedCount,
+      errorCount: this._errorCount,
+      deadLetterCount: this._deadLetterQueue.length,
+      activeKeyQueues: this._keyQueues.size,
+    };
   }
 
   public subscribe<T = unknown>(topic: string, handler: EventHandler<T>): Subscription {

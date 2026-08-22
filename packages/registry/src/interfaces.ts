@@ -10,6 +10,16 @@ export interface LoadedSkill {
   readonly manifest: SkillManifest;
   readonly handle: SkillHandle;
   refCount: number;
+  /**
+   * Absolute path to an executable module, or undefined for declarative skills.
+   * When set, the executor runs the skill in an isolated worker (SRC-1/2/3).
+   */
+  readonly modulePath?: string;
+  /**
+   * In-process handler used only for declarative skills (no modulePath). For
+   * module-backed skills the executor ignores this and runs the module in a
+   * worker. This is an explicit passthrough, not a fake execution result.
+   */
   execute(context: Record<string, unknown>): Promise<unknown>;
   dispose(): Promise<void>;
 }

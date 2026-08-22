@@ -110,6 +110,78 @@ test('SkillLoader acquires, releases, and drains instances properly during reloa
   await registry.shutdown();
 });
 
+test('SkillRegistry enforces manifest schema validation on register (SRC-16)', async () => {
+  const registry = new SkillRegistry();
+  await registry.boot();
+
+  // Invalid SemVer version
+  await assert.rejects(
+    async () => {
+      await registry.register({ ...sampleManifest, id: 'bad-version-skill', version: 'not-a-version' as any });
+    },
+    (err: any) => err.code === 'MANIFEST_INVALID'
+  );
+
+  // Invalid priority enum
+  await assert.rejects(
+    async () => {
+      await registry.register({ ...sampleManifest, id: 'bad-priority-skill', priority: 'urgent' as any });
+    },
+    (err: any) => err.code === 'MANIFEST_INVALID'
+  );
+
+  // confidenceThreshold out of [0,1] range
+  await assert.rejects(
+    async () => {
+      await registry.register({ ...sampleManifest, id: 'bad-threshold-skill', confidenceThreshold: 5 });
+    },
+    (err: any) => err.code === 'MANIFEST_INVALID'
+  );
+
+  // id violates the lowercase pattern
+  await assert.rejects(
+    async () => {
+      await registry.register({ ...sampleManifest, id: 'UPPERCASE-ID' });
+    },
+    (err: any) => err.code === 'MANIFEST_INVALID'
+  );
+
+  const quarantined = registry.getQuarantined();
+  assert.strictEqual(quarantined.length, 4, 'all four invalid manifests should be quarantined');
+  // Each quarantine record should carry schema validation error details
+  for (const record of quarantined) {
+    assert.ok(record.errors.length > 0, 'quarantine record should include error details');
+    assert.strictEqual(record.reason, 'Manifest failed schema validation');
+  }
+
+  await registry.shutdown();
+});
+
+test('SkillLoader enforces the drain timeout for unloading in-flight skills (SRC-18)', async () => {
+  const registry = new SkillRegistry();
+  await registry.boot();
+  await registry.register(sampleManifest);
+
+  const loader = new SkillLoader({ registry, drainTimeoutMs: 50 });
+  await loader.boot();
+
+  // Acquire an in-flight reference and unload. The skill enters 'draining'
+  // without blocking, then is force-disposed after the drain timeout elapses.
+  const instance = await loader.acquire('security-audit');
+  assert.strictEqual(instance.refCount, 1);
+
+  const result = await loader.unload('security-audit');
+  assert.strictEqual(result, true);
+  assert.strictEqual(instance.handle.lifecycleState, 'draining');
+
+  // After the drain deadline, the background timer disposes the skill.
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  assert.strictEqual(instance.handle.lifecycleState, 'unloaded');
+
+  await loader.shutdown();
+  await registry.shutdown();
+});
+
 test('SkillRegistry scans directory roots for manifests', async () => {
   const os = await import('node:os');
   const path = await import('node:path');
@@ -148,6 +220,62 @@ test('SkillRegistry scans directory roots for manifests', async () => {
     assert.strictEqual(discovered.length, 1);
     assert.strictEqual(discovered[0].id, 'scanned-skill-1');
     assert.strictEqual(registry.findByProduces('ScannedReport').length, 1);
+
+    await registry.shutdown();
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('SkillRegistry scan quarantines malformed manifests and recurses nested dirs (SRC-17)', async () => {
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const fs = await import('node:fs');
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agy-scan-nested-'));
+
+  try {
+    const validManifest = {
+      id: 'nested-skill',
+      name: 'Nested',
+      version: '1.0.0',
+      description: 'deeply nested',
+      priority: 'medium',
+      requires: [],
+      optional: [],
+      consumes: [],
+      produces: ['NestedReport'],
+      exclusiveWith: [],
+      confidenceThreshold: 0.8,
+      triggerPredicates: [],
+      permissions: [],
+      capabilities: ['nested'],
+      entryPoint: 'index.ts',
+    };
+
+    // Valid skill nested TWO levels deep (root/group/nested-skill/manifest.json).
+    const deepDir = path.join(tempDir, 'group', 'nested-skill');
+    fs.mkdirSync(deepDir, { recursive: true });
+    fs.writeFileSync(path.join(deepDir, 'manifest.json'), JSON.stringify(validManifest), 'utf-8');
+
+    // Malformed manifest one level deep.
+    const badDir = path.join(tempDir, 'broken-skill');
+    fs.mkdirSync(badDir, { recursive: true });
+    fs.writeFileSync(path.join(badDir, 'manifest.json'), '{ this is not valid json', 'utf-8');
+
+    const registry = new SkillRegistry();
+    await registry.boot();
+    const discovered = await registry.scan([tempDir]);
+
+    // The deeply nested valid skill must be discovered (recursion).
+    assert.strictEqual(discovered.length, 1);
+    assert.strictEqual(discovered[0].id, 'nested-skill');
+    assert.strictEqual(registry.findByProduces('NestedReport').length, 1);
+
+    // The malformed manifest must be quarantined (not silently dropped).
+    const quarantined = registry.getQuarantined();
+    assert.strictEqual(quarantined.length, 1);
+    assert.ok(quarantined[0].path.includes('broken-skill'));
+    assert.ok(quarantined[0].errors.length > 0);
 
     await registry.shutdown();
   } finally {

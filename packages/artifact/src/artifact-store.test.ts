@@ -118,3 +118,81 @@ test('ArtifactStore validates SHA-256 integrity on read and rejects corrupted bl
 
   await store.shutdown();
 });
+
+test('ArtifactStore persists blobs to a durable on-disk CAS and recovers on reboot (SRC-14)', async () => {
+  const os = await import('node:os');
+  const nodePath = await import('node:path');
+  const fs = await import('node:fs');
+  const tempDir = fs.mkdtempSync(nodePath.join(os.tmpdir(), 'agy-cas-'));
+
+  try {
+    const store = new ArtifactStore({ persistenceDir: tempDir });
+    await store.boot();
+
+    const env = await store.put('durable payload', { kind: 'DOC' });
+    await store.pin(env.hash);
+    await store.shutdown();
+
+    // New instance against the same dir must recover the blob + envelope + pin.
+    const store2 = new ArtifactStore({ persistenceDir: tempDir });
+    await store2.boot();
+    const recovered = await store2.get(env.hash);
+    assert.notStrictEqual(recovered, null);
+    assert.strictEqual(recovered?.toString('utf-8'), 'durable payload');
+    const recoveredEnv = await store2.getEnvelope(env.hash);
+    assert.notStrictEqual(recoveredEnv, null);
+    assert.strictEqual(recoveredEnv?.size, Buffer.from('durable payload').length);
+    await store2.shutdown();
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('ArtifactStore streams large blobs to disk without buffering the whole payload (SRC-15)', async () => {
+  const os = await import('node:os');
+  const nodePath = await import('node:path');
+  const fs = await import('node:fs');
+  const crypto = await import('node:crypto');
+  const streamModule = await import('node:stream');
+  const tempDir = fs.mkdtempSync(nodePath.join(os.tmpdir(), 'agy-cas-stream-'));
+
+  try {
+    const store = new ArtifactStore({ persistenceDir: tempDir });
+    await store.boot();
+
+    const chunkSize = 64 * 1024;
+    const chunks = 64;
+    const baseChunk = Buffer.alloc(chunkSize, 0xab);
+    const expectedHash = crypto.createHash('sha256');
+    let sent = 0;
+    const source = new streamModule.Readable({
+      read() {
+        if (sent < chunks) {
+          sent++;
+          expectedHash.update(baseChunk);
+          this.push(baseChunk);
+        } else {
+          this.push(null);
+        }
+      },
+    });
+
+    const env = await store.putStream(source, { type: 'BIG' });
+    const want = expectedHash.digest('hex');
+    assert.strictEqual(env.hash, want, 'streamed hash must match incremental sha256');
+    assert.strictEqual(env.size, chunkSize * chunks);
+
+    // getStream must return a real disk stream that yields the same bytes.
+    const outStream = await store.getStream(env.hash);
+    assert.notStrictEqual(outStream, null);
+    const reHash = crypto.createHash('sha256');
+    for await (const c of outStream!) {
+      reHash.update(c as Buffer);
+    }
+    assert.strictEqual(reHash.digest('hex'), want);
+
+    await store.shutdown();
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});

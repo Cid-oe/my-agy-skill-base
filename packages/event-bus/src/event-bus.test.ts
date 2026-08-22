@@ -161,6 +161,58 @@ test('EventBus cleans up per-key queues on drain and avoids memory leaks', async
   await bus.shutdown();
 });
 
+test('EventBus exposes processing/error counters via getStats (SRC-22)', async () => {
+  const bus = new EventBus({ backoffBaseMs: 1, maxRetries: 1 });
+  await bus.boot();
+
+  bus.subscribe('ok.topic', () => { /* success */ });
+  bus.subscribe('bad.topic', () => {
+    throw new Error('boom');
+  });
+
+  await bus.publish('ok.topic', { id: asUUID('ok-1'), topic: 'ok.topic', key: 'k', payload: {}, timestamp: 0 });
+  await bus.publish('bad.topic', { id: asUUID('bad-1'), topic: 'bad.topic', key: 'k', payload: {}, timestamp: 0 });
+
+  const stats = bus.getStats();
+  assert.ok(stats.processedCount >= 1, 'processedCount should reflect successful deliveries');
+  assert.ok(stats.errorCount >= 1, 'errorCount should reflect failed deliveries');
+  assert.ok(stats.deadLetterCount >= 1, 'failed event should be dead-lettered');
+
+  await bus.shutdown();
+});
+
+test('EventBus shutdown terminates even under a self-sustaining producer (EX-6)', async () => {
+  const bus = new EventBus({ shutdownDrainMs: 300 });
+  await bus.boot();
+
+  let count = 0;
+  // Self-sustaining loop: each delivered event republishes another, which
+  // previously kept the queue non-empty and wedged shutdown forever.
+  bus.subscribe('loop', async () => {
+    count++;
+    try {
+      await bus.publish('loop', { id: asUUID(`e${count}`), topic: 'loop', key: 'k', payload: {}, timestamp: 0 });
+      await new Promise((r) => setTimeout(r, 1));
+    } catch {
+      // publish rejects once the bus stops accepting during shutdown
+    }
+  });
+  bus.publish('loop', { id: asUUID('seed'), topic: 'loop', key: 'k', payload: {}, timestamp: 0 });
+  await new Promise((r) => setTimeout(r, 50));
+
+  const start = Date.now();
+  const result = await Promise.race([
+    bus.shutdown().then(() => 'completed'),
+    new Promise((res) => setTimeout(() => res('HUNG'), 2000)),
+  ]);
+  const elapsed = Date.now() - start;
+
+  assert.strictEqual(result, 'completed');
+  assert.ok(elapsed < 1000, `shutdown should be bounded, took ${elapsed}ms`);
+
+  await Promise.resolve();
+});
+
 test('EventBus retries with exponential backoff on subscriber errors before DLQ routing', async () => {
   let attemptCount = 0;
   const bus = new EventBus({ maxRetries: 3, backoffBaseMs: 15 });

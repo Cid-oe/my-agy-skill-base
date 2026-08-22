@@ -38,10 +38,11 @@ export async function createCliRuntime(): Promise<CliRuntime> {
   const registry = new SkillRegistry({ eventBus: bus });
   const loader = new SkillLoader({ registry, eventBus: bus });
   const resolver = new SkillResolver();
-  const scheduler = new Scheduler({ eventBus: bus, runtimeState: state });
+  const scheduler = new Scheduler({ eventBus: bus, runtimeState: state, policyEngine: policy });
   const executor = new Executor({
     skillLoader: loader,
     artifactStore: store,
+    policyEngine: policy,
     eventBus: bus,
   });
   const reflection = new ReflectionEngine({ runtimeState: state });
@@ -155,11 +156,28 @@ export async function handleCliCommand(
       }
 
       await rt.scheduler.submit(resResult.plan);
-      await rt.scheduler.tick();
+
+      // The scheduler is pull-based: advance until the plan reaches a terminal
+      // state. Reporting success after a single tick left multi-node plans
+      // silently incomplete (EX-2).
+      let status = rt.scheduler.getPlanStatus(resResult.plan.planId);
+      let guard = 0;
+      while (status === 'running' && guard < 100000) {
+        await rt.scheduler.tick();
+        status = rt.scheduler.getPlanStatus(resResult.plan.planId);
+        guard++;
+      }
+
+      if (status !== 'completed') {
+        return {
+          success: false,
+          output: `Plan ${resResult.plan.planId} for goal '${goalDesc}' did not complete (status: ${status})`,
+        };
+      }
 
       return {
         success: true,
-        output: `Executed plan ${resResult.plan.planId} for goal '${goalDesc}'`,
+        output: `Executed plan ${resResult.plan.planId} for goal '${goalDesc}' (status: completed)`,
       };
     }
 

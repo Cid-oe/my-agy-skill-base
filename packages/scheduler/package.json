@@ -7,7 +7,8 @@
     "@agy/shared": "*",
     "@agy/kernel": "*",
     "@agy/event-bus": "*",
-    "@agy/runtime-state": "*"
+    "@agy/runtime-state": "*",
+    "@agy/policy": "*"
   },
   "scripts": {
     "build": "tsc -b",
