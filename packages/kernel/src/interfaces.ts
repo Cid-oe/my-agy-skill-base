@@ -5,6 +5,15 @@
 
 import { Container, SubsystemHealth, UUID } from '@agy/shared';
 
+/**
+ * Canonical kernel subsystem contract (SRC-20). Previously the kernel declared
+ * its own narrower ISubsystem (boot/shutdown/health) while @agy/shared declared
+ * a different one (start/stop/getHealth/health/id); the shared contract now
+ * carries both the canonical boot/shutdown lifecycle and the legacy aliases, so
+ * there is a single source of truth. Re-exported here for kernel consumers.
+ */
+export type { ISubsystem } from '@agy/shared';
+
 export type KernelLifecycleState =
   | 'uninitialized'
   | 'booting'
@@ -20,13 +29,6 @@ export interface KernelConfig {
   persistenceDir?: string;
   maxBootRetries?: number;
   drainTimeoutMs?: number;
-}
-
-export interface ISubsystem {
-  readonly name: string;
-  boot(): Promise<void>;
-  shutdown(): Promise<void>;
-  health(): Promise<SubsystemHealth> | SubsystemHealth;
 }
 
 export interface KernelHandle {

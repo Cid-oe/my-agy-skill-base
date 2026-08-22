@@ -2,23 +2,33 @@ import { test } from 'node:test';
 import assert from 'node:assert';
 import { Kernel } from './kernel.js';
 import { ISubsystem } from './interfaces.js';
-import { SubsystemHealth } from '@agy/shared';
+import { SubsystemHealth, UUID, asUUID } from '@agy/shared';
 
 class MockSubsystem implements ISubsystem {
   public booted = false;
   public shutDown = false;
-  constructor(public readonly name: string) {}
+  public readonly id: UUID;
+  constructor(name: string) {
+    this.name = name;
+    this.id = asUUID(`mock-${name}`);
+  }
+  public readonly name: string;
 
   async boot(): Promise<void> {
     this.booted = true;
   }
+  async start(): Promise<void> { await this.boot(); }
 
   async shutdown(): Promise<void> {
     this.shutDown = true;
   }
+  async stop(): Promise<void> { await this.shutdown(); }
 
   health(): SubsystemHealth | Promise<SubsystemHealth> {
     return { status: 'healthy', uptimeMs: 100 };
+  }
+  async getHealth(): Promise<SubsystemHealth> {
+    return this.health();
   }
 }
 
