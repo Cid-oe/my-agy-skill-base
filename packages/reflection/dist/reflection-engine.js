@@ -8,12 +8,22 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.ReflectionEngine = void 0;
 const shared_1 = require("@agy/shared");
 class ReflectionEngine {
+    id = (0, shared_1.asUUID)('reflection');
     name = 'reflection';
     _runtimeState;
     _isReady = false;
-    _bootTime = 0;
+    _bootTime;
     constructor(options) {
         this._runtimeState = options.runtimeState;
+    }
+    async start() {
+        await this.boot();
+    }
+    async stop() {
+        await this.shutdown();
+    }
+    async getHealth() {
+        return Promise.resolve(this.health());
     }
     async boot() {
         this._isReady = true;
@@ -37,7 +47,8 @@ class ReflectionEngine {
             });
         }
         const snapshot = this._runtimeState.getSnapshot();
-        const activeLeaseCount = Object.values(snapshot.leases).filter((l) => !l.revoked).length;
+        const now = Date.now();
+        const activeLeaseCount = Object.values(snapshot.leases).filter((l) => !l.revoked && now <= l.expiresAt).length;
         const activePlanCount = snapshot.activePlans.length;
         const diagnostics = [
             `Kernel Runtime Version: ${snapshot.version}`,

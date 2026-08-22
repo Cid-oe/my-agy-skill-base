@@ -5,7 +5,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { SkillHandle, SkillManifest, SubsystemHealth, AgyError } from '@agy/shared';
+import { SkillHandle, SkillManifest, SubsystemHealth, AgyError, UUID, asUUID } from '@agy/shared';
 import { IEventBus } from '@agy/event-bus';
 import { ISkillRegistry, QuarantineRecord } from './interfaces.js';
 
@@ -14,6 +14,13 @@ export interface SkillRegistryOptions {
 }
 
 export class SkillRegistry implements ISkillRegistry {
+  public readonly id: UUID = asUUID('skill-registry');
+
+  public async start(): Promise<void> { await this.boot(); }
+
+  public async stop(): Promise<void> { await this.shutdown(); }
+
+  public async getHealth(): Promise<SubsystemHealth> { return Promise.resolve(this.health()); }
   public readonly name = 'skill-registry';
   private _manifests = new Map<string, Map<string, SkillManifest>>(); // id -> version -> manifest
   private _activeVersions = new Map<string, string>(); // id -> version
@@ -105,7 +112,7 @@ export class SkillRegistry implements ISkillRegistry {
 
     if (this._eventBus) {
       await this._eventBus.publish('skill.registered', {
-        id: randomUUID(),
+        id: asUUID(randomUUID()),
         topic: 'skill.registered',
         key: manifest.id,
         payload: { id: manifest.id, version: manifest.version },
@@ -180,5 +187,33 @@ export class SkillRegistry implements ISkillRegistry {
 
   public getQuarantined(): QuarantineRecord[] {
     return [...this._quarantine];
+  }
+
+  public async scan(roots: string[]): Promise<SkillManifest[]> {
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const discovered: SkillManifest[] = [];
+
+    for (const root of roots) {
+      if (!fs.existsSync(root)) continue;
+      const entries = fs.readdirSync(root, { withFileTypes: true });
+      for (const entry of entries) {
+        if (entry.isDirectory()) {
+          const manifestPath = path.join(root, entry.name, 'manifest.json');
+          if (fs.existsSync(manifestPath)) {
+            try {
+              const content = fs.readFileSync(manifestPath, 'utf-8');
+              const manifest = JSON.parse(content) as SkillManifest;
+              await this.register(manifest, root);
+              discovered.push(manifest);
+            } catch {
+              // Quarantined inside register
+            }
+          }
+        }
+      }
+    }
+
+    return discovered;
   }
 }

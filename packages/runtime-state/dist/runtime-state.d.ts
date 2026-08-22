@@ -3,15 +3,14 @@
  * Guarantees monotonic versioning, copy-on-write immutable snapshots,
  * transactional atomicity, write-ahead logging (WAL), and event emission.
  */
-import { Command, ExecutionLedger, Lease, LedgerEntry, StateSnapshot, SubsystemHealth, TransactionResult, UUID } from '@agy/shared';
-import { IEventBus } from '@agy/event-bus';
-import { IRuntimeState } from './interfaces.js';
-export interface RuntimeStateOptions {
-    eventBus?: IEventBus;
-    walPersister?: (entry: Command) => Promise<void> | void;
-}
-export declare class RuntimeState implements IRuntimeState {
+import { Command, ExecutionLedger, Lease, LedgerEntry, StateSnapshot, SubsystemHealth, TransactionResult, UUID, ISubsystem } from '@agy/shared';
+import { IRuntimeState, RuntimeStateOptions } from './interfaces.js';
+export declare class RuntimeState implements IRuntimeState, ISubsystem {
+    readonly id: UUID;
     readonly name = "runtime-state";
+    start(): Promise<void>;
+    stop(): Promise<void>;
+    getHealth(): Promise<SubsystemHealth>;
     private _version;
     private _leases;
     private _ledgers;
@@ -21,6 +20,9 @@ export declare class RuntimeState implements IRuntimeState {
     private _isReady;
     private _bootTime;
     private _eventBus?;
+    private _persistenceDir?;
+    private _walPersister?;
+    private _fsync;
     constructor(options?: RuntimeStateOptions);
     boot(): Promise<void>;
     shutdown(): Promise<void>;

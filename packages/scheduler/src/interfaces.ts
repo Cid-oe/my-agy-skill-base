@@ -4,7 +4,7 @@
  */
 
 import { ExecutionPlan, PlanNode, SubsystemHealth, TaskContext, UUID } from '@agy/shared';
-import { ISubsystem } from '@agy/kernel';
+import { ISubsystem } from '@agy/shared';
 
 export type TaskDispatcher = (task: TaskContext, node: PlanNode) => Promise<void>;
 

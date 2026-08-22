@@ -2,14 +2,15 @@ import { test } from 'node:test';
 import assert from 'node:assert';
 import { ReflectionEngine } from './reflection-engine.js';
 import { RuntimeState } from '@agy/runtime-state';
+import { asUUID } from '@agy/shared';
 
 test('ReflectionEngine performs read-only introspection over runtime state', async () => {
   const state = new RuntimeState();
   await state.boot();
 
-  await state.trackPlan('plan-reflection-test');
+  await state.trackPlan(asUUID('plan-reflection-test'));
   await state.grantLease({
-    leaseId: 'lease-ref-1',
+    leaseId: asUUID('lease-ref-1'),
     subject: 'skill-alpha',
     capabilities: [],
     issuedAt: Date.now(),

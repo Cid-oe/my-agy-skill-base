@@ -10,6 +10,7 @@ export interface PolicyEngineOptions {
     runtimeState?: IRuntimeState;
 }
 export declare class PolicyEngine implements IPolicyEngine {
+    readonly id: UUID;
     readonly name = "policy-engine";
     private _policies;
     private _runtimeState?;
@@ -18,6 +19,9 @@ export declare class PolicyEngine implements IPolicyEngine {
     constructor(options?: PolicyEngineOptions);
     boot(): Promise<void>;
     shutdown(): Promise<void>;
+    start(): Promise<void>;
+    stop(): Promise<void>;
+    getHealth(): Promise<SubsystemHealth>;
     health(): SubsystemHealth;
     registerPolicy(policy: IPolicy): void;
     unregisterPolicy(name: string): void;
@@ -25,5 +29,6 @@ export declare class PolicyEngine implements IPolicyEngine {
     issueLease(subject: string, capabilities: Capability[], ttlMs?: number): Promise<Lease>;
     validateLease(leaseId: UUID, requestedCapability: Capability): Promise<boolean>;
     revokeLease(leaseId: UUID): Promise<boolean>;
+    sweepExpiredLeases(): Promise<number>;
 }
 //# sourceMappingURL=policy-engine.d.ts.map

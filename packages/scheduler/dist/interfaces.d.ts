@@ -3,7 +3,7 @@
  * Strictly implements Phase 3 (IScheduler), RFC-0007, and RFC-0007a.
  */
 import { ExecutionPlan, PlanNode, SubsystemHealth, TaskContext, UUID } from '@agy/shared';
-import { ISubsystem } from '@agy/kernel';
+import { ISubsystem } from '@agy/shared';
 export type TaskDispatcher = (task: TaskContext, node: PlanNode) => Promise<void>;
 export interface IScheduler extends ISubsystem {
     submit(plan: ExecutionPlan): Promise<UUID>;

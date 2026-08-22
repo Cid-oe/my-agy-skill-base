@@ -4,7 +4,7 @@
  */
 
 import { Capability, Lease, PolicyDecision, PolicyRequest, SubsystemHealth, UUID } from '@agy/shared';
-import { ISubsystem } from '@agy/kernel';
+import { ISubsystem } from '@agy/shared';
 
 export interface IPolicy {
   readonly name: string;
@@ -19,5 +19,6 @@ export interface IPolicyEngine extends ISubsystem {
   issueLease(subject: string, capabilities: Capability[], ttlMs?: number): Promise<Lease>;
   validateLease(leaseId: UUID, requestedCapability: Capability): Promise<boolean>;
   revokeLease(leaseId: UUID): Promise<boolean>;
+  sweepExpiredLeases(): Promise<number>;
   health(): Promise<SubsystemHealth> | SubsystemHealth;
 }

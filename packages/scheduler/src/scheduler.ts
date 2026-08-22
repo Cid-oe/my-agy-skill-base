@@ -5,15 +5,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import {
-  ExecutionPlan,
-  ICancellationToken,
-  PlanNode,
-  SubsystemHealth,
-  TaskContext,
-  UUID,
-  AgyError,
-} from '@agy/shared';
+import { ExecutionPlan, ICancellationToken, PlanNode, PlanEdge, SubsystemHealth, TaskContext, UUID, asUUID, AgyError } from '@agy/shared';
 import { IEventBus } from '@agy/event-bus';
 import { IRuntimeState } from '@agy/runtime-state';
 import { IScheduler, TaskDispatcher } from './interfaces.js';
@@ -53,6 +45,20 @@ export interface SchedulerOptions {
 }
 
 export class Scheduler implements IScheduler {
+  public readonly id: UUID = asUUID('scheduler');
+
+  public async start(): Promise<void> {
+    await this.boot();
+  }
+
+  public async stop(): Promise<void> {
+    await this.shutdown();
+  }
+
+  public async getHealth(): Promise<SubsystemHealth> {
+    return Promise.resolve(this.health());
+  }
+
   public readonly name = 'scheduler';
   private _plans = new Map<UUID, ExecutionPlan>();
   private _planTokens = new Map<UUID, SimpleCancellationToken>();
@@ -128,7 +134,7 @@ export class Scheduler implements IScheduler {
 
     if (this._eventBus) {
       await this._eventBus.publish('scheduler.plan.submitted', {
-        id: randomUUID(),
+        id: asUUID(randomUUID()),
         topic: 'scheduler.plan.submitted',
         key: plan.planId,
         payload: { planId: plan.planId, nodeCount: plan.nodes.length },
@@ -148,6 +154,7 @@ export class Scheduler implements IScheduler {
     if (token) {
       token.cancel();
     }
+    this.cleanupPlanExecutionResources(planId);
 
     if (this._runtimeState) {
       await this._runtimeState.untrackPlan(planId);
@@ -174,6 +181,7 @@ export class Scheduler implements IScheduler {
 
       if (readyNodes.length === 0 && completed.size === plan.nodes.length) {
         plan.status = 'completed';
+        this.cleanupPlanExecutionResources(planId);
         if (this._runtimeState) {
           await this._runtimeState.untrackPlan(planId);
         }
@@ -182,9 +190,9 @@ export class Scheduler implements IScheduler {
 
       const now = Date.now();
       const taskQueue: QueuedTask[] = readyNodes.map((node) => ({
-        taskId: randomUUID(),
+        taskId: asUUID(randomUUID()),
         node,
-        planId,
+        planId: asUUID(planId),
         queuedAt: plan.createdAt,
         basePriority: node.skillRef.id.startsWith('sec') ? 500 : 100,
       }));
@@ -208,7 +216,7 @@ export class Scheduler implements IScheduler {
           nodeId: item.node.nodeId,
           planId: item.planId,
           lease: {
-            leaseId: randomUUID(),
+            leaseId: asUUID(randomUUID()),
             subject: item.node.skillRef.id,
             capabilities: [],
             issuedAt: now,
@@ -224,16 +232,27 @@ export class Scheduler implements IScheduler {
           .then(async () => {
             item.node.state = 'done';
             completed.add(item.node.nodeId);
-            if (completed.size === plan.nodes.length) {
+            if (plan.status === 'running' && completed.size === plan.nodes.length) {
               plan.status = 'completed';
+              this.cleanupPlanExecutionResources(planId);
               if (this._runtimeState) {
                 await this._runtimeState.untrackPlan(planId);
               }
             }
           })
-          .catch((err) => {
+          .catch(async (err) => {
             console.error(`Error executing task ${item.taskId} on skill ${item.node.skillRef.id}:`, err);
             item.node.state = 'error';
+            plan.status = 'failed';
+            // Cancel other tasks in this plan
+            const token = this._planTokens.get(planId);
+            if (token) {
+              token.cancel();
+            }
+            this.cleanupPlanExecutionResources(planId);
+            if (this._runtimeState) {
+              await this._runtimeState.untrackPlan(planId);
+            }
           });
 
         promises.push(p);
@@ -248,6 +267,12 @@ export class Scheduler implements IScheduler {
     return dispatchedCount;
   }
 
+  private cleanupPlanExecutionResources(planId: UUID): void {
+    this._planTokens.delete(planId);
+    this._nodeCompletion.delete(planId);
+    this._inFlightPromises.delete(planId);
+  }
+
   private findReadyNodes(plan: ExecutionPlan, completed: Set<UUID>): PlanNode[] {
     const ready: PlanNode[] = [];
 
@@ -256,8 +281,8 @@ export class Scheduler implements IScheduler {
         continue;
       }
 
-      const incoming = plan.edges.filter((e) => e.toNodeId === node.nodeId && e.kind === 'ordering');
-      const satisfied = incoming.every((e) => completed.has(e.fromNodeId));
+      const incoming = plan.edges.filter((e: PlanEdge) => e.toNodeId === node.nodeId && e.kind === 'ordering');
+      const satisfied = incoming.every((e: PlanEdge) => completed.has(e.fromNodeId));
 
       if (satisfied) {
         ready.push(node);

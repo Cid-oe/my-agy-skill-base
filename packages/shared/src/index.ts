@@ -7,3 +7,4 @@ export * from './types.js';
 export * from './errors.js';
 export * from './events.js';
 export * from './di.js';
+export * from './subsystem.js';

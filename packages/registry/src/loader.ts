@@ -5,7 +5,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { SkillHandle, SubsystemHealth, AgyError } from '@agy/shared';
+import { SkillHandle, SubsystemHealth, AgyError, UUID, asUUID } from '@agy/shared';
 import { IEventBus } from '@agy/event-bus';
 import { ISkillLoader, ISkillRegistry, LoadedSkill } from './interfaces.js';
 
@@ -16,7 +16,14 @@ export interface SkillLoaderOptions {
 }
 
 export class SkillLoader implements ISkillLoader {
+  public readonly id: UUID = asUUID('skill-loader');
   public readonly name = 'skill-loader';
+
+  public async start(): Promise<void> { await this.boot(); }
+
+  public async stop(): Promise<void> { await this.shutdown(); }
+
+  public async getHealth(): Promise<SubsystemHealth> { return Promise.resolve(this.health()); }
   private _registry: ISkillRegistry;
   private _eventBus?: IEventBus;
   private _loadedSkills = new Map<string, LoadedSkill>();
@@ -108,7 +115,7 @@ export class SkillLoader implements ISkillLoader {
 
     if (this._eventBus) {
       await this._eventBus.publish('skill.loaded', {
-        id: randomUUID(),
+        id: asUUID(randomUUID()),
         topic: 'skill.loaded',
         key: id,
         payload: { id, version: manifest.version },
@@ -119,25 +126,49 @@ export class SkillLoader implements ISkillLoader {
     return loadedSkill;
   }
 
+  public async acquire(id: string): Promise<LoadedSkill> {
+    const loaded = this._loadedSkills.get(id);
+    if (loaded) {
+      loaded.refCount++;
+      return loaded;
+    }
+    return this.load(id);
+  }
+
+  public async release(target: string | LoadedSkill): Promise<void> {
+    const instance =
+      typeof target === 'string'
+        ? this._drainingSkills.get(target) || this._loadedSkills.get(target)
+        : target;
+
+    if (!instance) return;
+
+    if (instance.refCount > 0) {
+      instance.refCount--;
+    }
+
+    if (instance.handle.lifecycleState === 'draining' && instance.refCount <= 0) {
+      await instance.dispose();
+      this._drainingSkills.delete(instance.manifest.id);
+    }
+  }
+
   public async unload(id: string): Promise<boolean> {
     const loaded = this._loadedSkills.get(id);
     if (!loaded) return false;
 
-    if (loaded.refCount > 1) {
-      loaded.refCount--;
-      return false; // Still referenced by in-flight tasks
-    }
-
-    loaded.handle.lifecycleState = 'draining';
-    this._drainingSkills.set(id, loaded);
     this._loadedSkills.delete(id);
 
-    await loaded.dispose();
-    this._drainingSkills.delete(id);
+    if (loaded.refCount > 0) {
+      loaded.handle.lifecycleState = 'draining';
+      this._drainingSkills.set(id, loaded);
+    } else {
+      await loaded.dispose();
+    }
 
     if (this._eventBus) {
       await this._eventBus.publish('skill.unloaded', {
-        id: randomUUID(),
+        id: asUUID(randomUUID()),
         topic: 'skill.unloaded',
         key: id,
         payload: { id },
@@ -154,17 +185,13 @@ export class SkillLoader implements ISkillLoader {
       oldInstance.handle.lifecycleState = 'draining';
       this._drainingSkills.set(id, oldInstance);
       this._loadedSkills.delete(id);
-    }
 
-    const newInstance = await this.load(id);
-
-    if (oldInstance) {
-      setTimeout(async () => {
+      if (oldInstance.refCount === 0) {
         await oldInstance.dispose();
         this._drainingSkills.delete(id);
-      }, 100);
+      }
     }
 
-    return newInstance;
+    return this.load(id);
   }
 }

@@ -51,4 +51,38 @@ class MockSubsystem {
     await kernel.shutdown(); // second call must succeed without error
     node_assert_1.default.strictEqual(kernel.state, 'shutdown');
 });
+(0, node_test_1.test)('Kernel rolls back booted subsystems in reverse order on boot failure', async () => {
+    const kernel = new kernel_js_1.Kernel();
+    const sub1 = new MockSubsystem('sub1');
+    const subFail = new MockSubsystem('subFail');
+    subFail.boot = async () => {
+        throw new Error('Explosion during boot');
+    };
+    kernel.registerSubsystem(sub1);
+    kernel.registerSubsystem(subFail);
+    await node_assert_1.default.rejects(async () => {
+        await kernel.boot();
+    }, (err) => {
+        return err.code === 'BOOT_FAILED';
+    });
+    node_assert_1.default.strictEqual(kernel.state, 'shutdown');
+    node_assert_1.default.strictEqual(sub1.booted, true);
+    node_assert_1.default.strictEqual(sub1.shutDown, true); // Rolled back cleanly!
+});
+(0, node_test_1.test)('Kernel handles hanging subsystem health checks gracefully', async () => {
+    const kernel = new kernel_js_1.Kernel();
+    const sub1 = new MockSubsystem('sub1');
+    const subHanging = new MockSubsystem('subHanging');
+    subHanging.health = async () => {
+        await new Promise((r) => setTimeout(r, 5000));
+        return { status: 'healthy', uptimeMs: 0 };
+    };
+    kernel.registerSubsystem(sub1);
+    kernel.registerSubsystem(subHanging);
+    await kernel.boot();
+    const health = await kernel.health();
+    node_assert_1.default.strictEqual(health['sub1'].status, 'healthy');
+    node_assert_1.default.strictEqual(health['subHanging'].status, 'unhealthy');
+    await kernel.shutdown();
+});
 //# sourceMappingURL=kernel.test.js.map

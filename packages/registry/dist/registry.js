@@ -9,6 +9,10 @@ exports.SkillRegistry = void 0;
 const node_crypto_1 = require("node:crypto");
 const shared_1 = require("@agy/shared");
 class SkillRegistry {
+    id = (0, shared_1.asUUID)('skill-registry');
+    async start() { await this.boot(); }
+    async stop() { await this.shutdown(); }
+    async getHealth() { return Promise.resolve(this.health()); }
     name = 'skill-registry';
     _manifests = new Map(); // id -> version -> manifest
     _activeVersions = new Map(); // id -> version
@@ -89,7 +93,7 @@ class SkillRegistry {
         };
         if (this._eventBus) {
             await this._eventBus.publish('skill.registered', {
-                id: (0, node_crypto_1.randomUUID)(),
+                id: (0, shared_1.asUUID)((0, node_crypto_1.randomUUID)()),
                 topic: 'skill.registered',
                 key: manifest.id,
                 payload: { id: manifest.id, version: manifest.version },
@@ -160,6 +164,33 @@ class SkillRegistry {
     }
     getQuarantined() {
         return [...this._quarantine];
+    }
+    async scan(roots) {
+        const fs = await import('node:fs');
+        const path = await import('node:path');
+        const discovered = [];
+        for (const root of roots) {
+            if (!fs.existsSync(root))
+                continue;
+            const entries = fs.readdirSync(root, { withFileTypes: true });
+            for (const entry of entries) {
+                if (entry.isDirectory()) {
+                    const manifestPath = path.join(root, entry.name, 'manifest.json');
+                    if (fs.existsSync(manifestPath)) {
+                        try {
+                            const content = fs.readFileSync(manifestPath, 'utf-8');
+                            const manifest = JSON.parse(content);
+                            await this.register(manifest, root);
+                            discovered.push(manifest);
+                        }
+                        catch {
+                            // Quarantined inside register
+                        }
+                    }
+                }
+            }
+        }
+        return discovered;
     }
 }
 exports.SkillRegistry = SkillRegistry;

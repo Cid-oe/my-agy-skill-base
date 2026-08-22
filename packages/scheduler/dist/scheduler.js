@@ -27,6 +27,16 @@ class SimpleCancellationToken {
     }
 }
 class Scheduler {
+    id = (0, shared_1.asUUID)('scheduler');
+    async start() {
+        await this.boot();
+    }
+    async stop() {
+        await this.shutdown();
+    }
+    async getHealth() {
+        return Promise.resolve(this.health());
+    }
     name = 'scheduler';
     _plans = new Map();
     _planTokens = new Map();
@@ -92,7 +102,7 @@ class Scheduler {
         }
         if (this._eventBus) {
             await this._eventBus.publish('scheduler.plan.submitted', {
-                id: (0, node_crypto_1.randomUUID)(),
+                id: (0, shared_1.asUUID)((0, node_crypto_1.randomUUID)()),
                 topic: 'scheduler.plan.submitted',
                 key: plan.planId,
                 payload: { planId: plan.planId, nodeCount: plan.nodes.length },
@@ -110,6 +120,7 @@ class Scheduler {
         if (token) {
             token.cancel();
         }
+        this.cleanupPlanExecutionResources(planId);
         if (this._runtimeState) {
             await this._runtimeState.untrackPlan(planId);
         }
@@ -130,6 +141,7 @@ class Scheduler {
             const readyNodes = this.findReadyNodes(plan, completed);
             if (readyNodes.length === 0 && completed.size === plan.nodes.length) {
                 plan.status = 'completed';
+                this.cleanupPlanExecutionResources(planId);
                 if (this._runtimeState) {
                     await this._runtimeState.untrackPlan(planId);
                 }
@@ -137,9 +149,9 @@ class Scheduler {
             }
             const now = Date.now();
             const taskQueue = readyNodes.map((node) => ({
-                taskId: (0, node_crypto_1.randomUUID)(),
+                taskId: (0, shared_1.asUUID)((0, node_crypto_1.randomUUID)()),
                 node,
-                planId,
+                planId: (0, shared_1.asUUID)(planId),
                 queuedAt: plan.createdAt,
                 basePriority: node.skillRef.id.startsWith('sec') ? 500 : 100,
             }));
@@ -159,7 +171,7 @@ class Scheduler {
                     nodeId: item.node.nodeId,
                     planId: item.planId,
                     lease: {
-                        leaseId: (0, node_crypto_1.randomUUID)(),
+                        leaseId: (0, shared_1.asUUID)((0, node_crypto_1.randomUUID)()),
                         subject: item.node.skillRef.id,
                         capabilities: [],
                         issuedAt: now,
@@ -173,16 +185,27 @@ class Scheduler {
                     .then(async () => {
                     item.node.state = 'done';
                     completed.add(item.node.nodeId);
-                    if (completed.size === plan.nodes.length) {
+                    if (plan.status === 'running' && completed.size === plan.nodes.length) {
                         plan.status = 'completed';
+                        this.cleanupPlanExecutionResources(planId);
                         if (this._runtimeState) {
                             await this._runtimeState.untrackPlan(planId);
                         }
                     }
                 })
-                    .catch((err) => {
+                    .catch(async (err) => {
                     console.error(`Error executing task ${item.taskId} on skill ${item.node.skillRef.id}:`, err);
                     item.node.state = 'error';
+                    plan.status = 'failed';
+                    // Cancel other tasks in this plan
+                    const token = this._planTokens.get(planId);
+                    if (token) {
+                        token.cancel();
+                    }
+                    this.cleanupPlanExecutionResources(planId);
+                    if (this._runtimeState) {
+                        await this._runtimeState.untrackPlan(planId);
+                    }
                 });
                 promises.push(p);
             }
@@ -192,6 +215,11 @@ class Scheduler {
             }
         }
         return dispatchedCount;
+    }
+    cleanupPlanExecutionResources(planId) {
+        this._planTokens.delete(planId);
+        this._nodeCompletion.delete(planId);
+        this._inFlightPromises.delete(planId);
     }
     findReadyNodes(plan, completed) {
         const ready = [];

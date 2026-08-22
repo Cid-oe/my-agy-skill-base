@@ -12,8 +12,24 @@ import {
   SubsystemHealth,
   TransactionResult,
   UUID,
+  ISubsystem,
 } from '@agy/shared';
-import { ISubsystem } from '@agy/kernel';
+import { IEventBus } from '@agy/event-bus';
+
+export interface WalRecord {
+  seq: number;
+  crc?: number;
+  timestamp: number;
+  commands: Command[];
+}
+
+export interface RuntimeStateOptions {
+  persistenceDir?: string;
+  eventBus?: IEventBus;
+  fsync?: boolean;
+  checkpointIntervalCommands?: number;
+  walPersister?: (entry: Command) => Promise<void> | void;
+}
 
 export interface IRuntimeState extends ISubsystem {
   transact(commands: Command[]): Promise<TransactionResult>;

@@ -5,3 +5,5 @@
 
 export * from './interfaces.js';
 export * from './scheduler.js';
+import { Scheduler } from './scheduler.js';
+(global as any).Scheduler = Scheduler;

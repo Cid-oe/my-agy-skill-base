@@ -3,7 +3,7 @@
  * Manages loaded executable skill instances, lifecycle state transitions,
  * in-flight task reference counting, and the RFC-0002a drain/hot-reload protocol.
  */
-import { SubsystemHealth } from '@agy/shared';
+import { SubsystemHealth, UUID } from '@agy/shared';
 import { IEventBus } from '@agy/event-bus';
 import { ISkillLoader, ISkillRegistry, LoadedSkill } from './interfaces.js';
 export interface SkillLoaderOptions {
@@ -12,7 +12,11 @@ export interface SkillLoaderOptions {
     drainTimeoutMs?: number;
 }
 export declare class SkillLoader implements ISkillLoader {
+    readonly id: UUID;
     readonly name = "skill-loader";
+    start(): Promise<void>;
+    stop(): Promise<void>;
+    getHealth(): Promise<SubsystemHealth>;
     private _registry;
     private _eventBus?;
     private _loadedSkills;
@@ -26,6 +30,8 @@ export declare class SkillLoader implements ISkillLoader {
     health(): SubsystemHealth;
     getLoaded(id: string): LoadedSkill | null;
     load(id: string, version?: string): Promise<LoadedSkill>;
+    acquire(id: string): Promise<LoadedSkill>;
+    release(target: string | LoadedSkill): Promise<void>;
     unload(id: string): Promise<boolean>;
     reload(id: string): Promise<LoadedSkill>;
 }

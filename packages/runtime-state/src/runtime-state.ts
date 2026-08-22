@@ -5,6 +5,8 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import {
   Command,
   ExecutionLedger,
@@ -15,34 +17,68 @@ import {
   TransactionResult,
   UUID,
   AgyError,
+  asUUID,
+  ISubsystem,
 } from '@agy/shared';
 import { IEventBus } from '@agy/event-bus';
-import { IRuntimeState } from './interfaces.js';
+import { IRuntimeState, RuntimeStateOptions, WalRecord } from './interfaces.js';
 
-export interface RuntimeStateOptions {
-  eventBus?: IEventBus;
-  walPersister?: (entry: Command) => Promise<void> | void;
-}
-
-export class RuntimeState implements IRuntimeState {
+export class RuntimeState implements IRuntimeState, ISubsystem {
+  public readonly id: UUID = asUUID('runtime-state');
   public readonly name = 'runtime-state';
+
+  public async start(): Promise<void> { await this.boot(); }
+  public async stop(): Promise<void> { await this.shutdown(); }
+  public async getHealth(): Promise<SubsystemHealth> { return Promise.resolve(this.health()); }
+
   private _version = 0;
-  private _leases = new Map<string, Lease>();
-  private _ledgers = new Map<string, ExecutionLedger>();
-  private _activePlans = new Set<string>();
+  private _leases = new Map<UUID, Lease>();
+  private _ledgers = new Map<UUID, ExecutionLedger>();
+  private _activePlans = new Set<UUID>();
   private _walLog: Command[] = [];
   private _transactionQueue = Promise.resolve();
   private _isReady = false;
   private _bootTime = 0;
   private _eventBus?: IEventBus;
+  private _persistenceDir?: string;
+  private _walPersister?: (entry: Command) => Promise<void> | void;
+  private _fsync: boolean;
 
   constructor(options: RuntimeStateOptions = {}) {
     this._eventBus = options.eventBus;
+    this._persistenceDir = options.persistenceDir;
+    this._walPersister = options.walPersister;
+    this._fsync = options.fsync ?? true;
   }
 
   public async boot(): Promise<void> {
     this._isReady = true;
     this._bootTime = Date.now();
+
+    // Replay WAL on boot if persistence directory is specified
+    if (this._persistenceDir) {
+      const walDir = path.join(this._persistenceDir, 'wal');
+      if (!fs.existsSync(walDir)) {
+        fs.mkdirSync(walDir, { recursive: true });
+      }
+      const walFile = path.join(walDir, 'current.wal');
+      if (fs.existsSync(walFile)) {
+        const content = fs.readFileSync(walFile, 'utf-8');
+        const lines = content.split('\n').filter((l) => l.trim().length > 0);
+        for (const line of lines) {
+          try {
+            const record = JSON.parse(line) as WalRecord;
+            for (const cmd of record.commands) {
+              this.applyCommand(cmd);
+              this._walLog.push(cmd);
+            }
+            this._version = record.seq;
+          } catch {
+            // Ignore malformed trailing records during recovery
+          }
+        }
+      }
+    }
   }
 
   public async shutdown(): Promise<void> {
@@ -105,15 +141,63 @@ export class RuntimeState implements IRuntimeState {
     }
 
     // Single-writer command queue serialization
-    const result = new Promise<TransactionResult>((resolve, reject) => {
+    const result = new Promise<TransactionResult>((resolve) => {
       this._transactionQueue = this._transactionQueue
         .then(async () => {
+          // Backup state for rollback
+          const leasesBackup = new Map<UUID, Lease>();
+          for (const [k, v] of this._leases.entries()) {
+            leasesBackup.set(k, { ...v, capabilities: [...v.capabilities] });
+          }
+
+          const ledgersBackup = new Map<UUID, ExecutionLedger>();
+          for (const [k, v] of this._ledgers.entries()) {
+            ledgersBackup.set(k, {
+              planId: v.planId,
+              finalStatus: v.finalStatus,
+              entries: v.entries.map((e) => ({ ...e })),
+            });
+          }
+
+          const activePlansBackup = new Set(this._activePlans);
+
           try {
             for (const cmd of commands) {
               this.applyCommand(cmd);
-              this._walLog.push(cmd);
             }
+            
+            // All commands succeeded, commit to WAL
+            for (const cmd of commands) {
+              this._walLog.push(cmd);
+              if (this._walPersister) {
+                await this._walPersister(cmd);
+              }
+            }
+
             this._version++;
+
+            if (this._persistenceDir) {
+              const walDir = path.join(this._persistenceDir, 'wal');
+              if (!fs.existsSync(walDir)) {
+                fs.mkdirSync(walDir, { recursive: true });
+              }
+              const walFile = path.join(walDir, 'current.wal');
+              const record: WalRecord = {
+                seq: this._version,
+                timestamp: Date.now(),
+                commands,
+              };
+              const fd = fs.openSync(walFile, 'a');
+              try {
+                fs.writeSync(fd, JSON.stringify(record) + '\n');
+                if (this._fsync) {
+                  fs.fsyncSync(fd);
+                }
+              } finally {
+                fs.closeSync(fd);
+              }
+            }
+
             const txResult: TransactionResult = {
               version: this._version,
               success: true,
@@ -121,7 +205,7 @@ export class RuntimeState implements IRuntimeState {
 
             if (this._eventBus) {
               await this._eventBus.publish('state.mutated', {
-                id: randomUUID(),
+                id: asUUID(randomUUID()),
                 topic: 'state.mutated',
                 key: `v:${this._version}`,
                 payload: { version: this._version, commandCount: commands.length },
@@ -131,6 +215,11 @@ export class RuntimeState implements IRuntimeState {
 
             resolve(txResult);
           } catch (err: unknown) {
+            // Rollback on command application failure
+            this._leases = leasesBackup;
+            this._ledgers = ledgersBackup;
+            this._activePlans = activePlansBackup;
+
             const msg = err instanceof Error ? err.message : String(err);
             resolve({
               version: this._version,
@@ -139,7 +228,14 @@ export class RuntimeState implements IRuntimeState {
             });
           }
         })
-        .catch(reject);
+        .catch((err) => {
+          // Fallback catch to prevent the queue promise from ever remaining rejected
+          resolve({
+            version: this._version,
+            success: false,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        });
     });
 
     return result;
@@ -181,7 +277,7 @@ export class RuntimeState implements IRuntimeState {
         break;
       }
       case 'REVOKE_LEASE': {
-        const { leaseId } = cmd.payload as { leaseId: string };
+        const { leaseId } = cmd.payload as { leaseId: UUID };
         const lease = this._leases.get(leaseId);
         if (lease) {
           lease.revoked = true;
@@ -189,7 +285,7 @@ export class RuntimeState implements IRuntimeState {
         break;
       }
       case 'TRACK_PLAN': {
-        const { planId } = cmd.payload as { planId: string };
+        const { planId } = cmd.payload as { planId: UUID };
         this._activePlans.add(planId);
         if (!this._ledgers.has(planId)) {
           this._ledgers.set(planId, { planId, entries: [] });
@@ -197,12 +293,12 @@ export class RuntimeState implements IRuntimeState {
         break;
       }
       case 'UNTRACK_PLAN': {
-        const { planId } = cmd.payload as { planId: string };
+        const { planId } = cmd.payload as { planId: UUID };
         this._activePlans.delete(planId);
         break;
       }
       case 'APPEND_LEDGER': {
-        const { planId, entry } = cmd.payload as { planId: string; entry: LedgerEntry };
+        const { planId, entry } = cmd.payload as { planId: UUID; entry: LedgerEntry };
         let ledger = this._ledgers.get(planId);
         if (!ledger) {
           ledger = { planId, entries: [] };

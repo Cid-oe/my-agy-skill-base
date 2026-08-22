@@ -3,7 +3,7 @@
  * Strictly implements Phase 3 (ISkillRegistry, ISkillLoader) and RFC-0002 / RFC-0002a.
  */
 import { SkillHandle, SkillManifest, SubsystemHealth } from '@agy/shared';
-import { ISubsystem } from '@agy/kernel';
+import { ISubsystem } from '@agy/shared';
 export interface LoadedSkill {
     readonly manifest: SkillManifest;
     readonly handle: SkillHandle;
@@ -26,10 +26,13 @@ export interface ISkillRegistry extends ISubsystem {
     findByProduces(artifactType: string): SkillManifest[];
     findByCapability(tag: string): SkillManifest[];
     getQuarantined(): QuarantineRecord[];
+    scan(roots: string[]): Promise<SkillManifest[]>;
     health(): Promise<SubsystemHealth> | SubsystemHealth;
 }
 export interface ISkillLoader extends ISubsystem {
     load(id: string, version?: string): Promise<LoadedSkill>;
+    acquire(id: string): Promise<LoadedSkill>;
+    release(target: string | LoadedSkill): Promise<void>;
     unload(id: string): Promise<boolean>;
     reload(id: string): Promise<LoadedSkill>;
     getLoaded(id: string): LoadedSkill | null;

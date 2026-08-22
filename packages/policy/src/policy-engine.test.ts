@@ -3,7 +3,7 @@ import assert from 'node:assert';
 import { PolicyEngine } from './policy-engine.js';
 import { IPolicy } from './interfaces.js';
 import { RuntimeState } from '@agy/runtime-state';
-import { PolicyRequest } from '@agy/shared';
+import { PolicyRequest, asUUID } from '@agy/shared';
 
 test('PolicyEngine enforces Deny-Overrides and Priority Precedence', async () => {
   const engine = new PolicyEngine();
@@ -51,13 +51,13 @@ test('PolicyEngine enforces Deny-Overrides and Priority Precedence', async () =>
   engine.registerPolicy(securityDenyPolicy);
 
   const safeReq: PolicyRequest = {
-    requestId: 'req-1',
+    requestId: asUUID('req-1'),
     subject: 'skill-reader',
     capability: { name: 'fs:read', scope: '/project' },
   };
 
   const deniedReq: PolicyRequest = {
-    requestId: 'req-2',
+    requestId: asUUID('req-2'),
     subject: 'skill-rogue',
     capability: { name: 'fs:delete_root', scope: '/' },
   };
@@ -104,6 +104,85 @@ test('PolicyEngine issues and validates Leases against RuntimeState', async () =
     scope: 'api.google.com',
   });
   assert.strictEqual(isPostRevokeValid, false);
+
+  await engine.shutdown();
+  await state.shutdown();
+});
+
+test('PolicyEngine enforces fail-closed default when 0 policies registered', async () => {
+  const engine = new PolicyEngine();
+  await engine.boot();
+
+  const decision = await engine.evaluate({
+    requestId: asUUID('req-fail-closed'),
+    subject: 'untrusted-agent',
+    capability: { name: 'fs:read', scope: '/project' },
+  });
+
+  assert.strictEqual(decision.decision, 'deny');
+  assert.strictEqual(decision.reason, 'Default deny: No matching permit policy');
+
+  await engine.shutdown();
+});
+
+test('PolicyEngine validates subpath scope containment constraints', async () => {
+  const state = new RuntimeState();
+  await state.boot();
+
+  const engine = new PolicyEngine({ runtimeState: state });
+  await engine.boot();
+
+  const lease = await engine.issueLease(
+    'scoped-worker',
+    [{ name: 'fs:read', scope: '/workspace/project' }],
+    60000
+  );
+
+  // Subpath within /workspace/project should match
+  const validSubpath = await engine.validateLease(lease.leaseId, {
+    name: 'fs:read',
+    scope: '/workspace/project/src/index.ts',
+  });
+  assert.strictEqual(validSubpath, true);
+
+  // Path outside scope should be rejected
+  const invalidPath = await engine.validateLease(lease.leaseId, {
+    name: 'fs:read',
+    scope: '/etc/passwd',
+  });
+  assert.strictEqual(invalidPath, false);
+
+  await engine.shutdown();
+  await state.shutdown();
+});
+
+test('PolicyEngine rejects expired leases and sweeps them from state', async () => {
+  const state = new RuntimeState();
+  await state.boot();
+
+  const engine = new PolicyEngine({ runtimeState: state });
+  await engine.boot();
+
+  // Create lease that expires in 10ms
+  const lease = await engine.issueLease(
+    'expiring-worker',
+    [{ name: 'fs:read', scope: '*' }],
+    10
+  );
+
+  await new Promise((resolve) => setTimeout(resolve, 25));
+
+  // Should fail validation due to expiry
+  const valid = await engine.validateLease(lease.leaseId, {
+    name: 'fs:read',
+    scope: '/any/path',
+  });
+  assert.strictEqual(valid, false);
+
+  // Sweep expired leases
+  const sweptCount = await engine.sweepExpiredLeases();
+  assert.strictEqual(sweptCount, 1);
+  assert.strictEqual(state.getLease(lease.leaseId)?.revoked, true);
 
   await engine.shutdown();
   await state.shutdown();

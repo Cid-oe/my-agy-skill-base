@@ -9,7 +9,7 @@ const node_crypto_1 = require("node:crypto");
 const shared_1 = require("@agy/shared");
 class Kernel {
     _state = 'uninitialized';
-    _kernelId = (0, node_crypto_1.randomUUID)();
+    _kernelId = (0, shared_1.asUUID)((0, node_crypto_1.randomUUID)());
     _container = new shared_1.Container();
     _subsystems = [];
     _config = {};
@@ -43,9 +43,10 @@ class Kernel {
             });
         }
         this._config = config;
-        this._kernelId = config.kernelId || (0, node_crypto_1.randomUUID)();
+        this._kernelId = config.kernelId || (0, shared_1.asUUID)((0, node_crypto_1.randomUUID)());
         this._state = 'booting';
         this._bootedAt = Date.now();
+        const bootedSubsystems = [];
         try {
             // Step 1: Initialize container configuration
             this._container.register('config', this._config);
@@ -53,13 +54,23 @@ class Kernel {
             // Step 2-8: Sequential dependency-ordered subsystem boot
             for (const subsystem of this._subsystems) {
                 await subsystem.boot();
+                bootedSubsystems.push(subsystem);
                 this._container.register(subsystem.name, subsystem);
             }
             this._state = 'ready';
             return this.createHandle();
         }
         catch (err) {
-            this._state = 'degraded';
+            // Reverse-order rollback on boot failure (Phase 7 / RFC-0000)
+            for (const sub of [...bootedSubsystems].reverse()) {
+                try {
+                    await sub.shutdown();
+                }
+                catch (rollbackErr) {
+                    console.error(`Error during rollback shutdown of ${sub.name}:`, rollbackErr);
+                }
+            }
+            this._state = 'shutdown';
             const msg = err instanceof Error ? err.message : String(err);
             throw new shared_1.AgyError(`Kernel boot failed: ${msg}`, {
                 code: 'BOOT_FAILED',
@@ -94,16 +105,28 @@ class Kernel {
                 uptimeMs: this._bootedAt ? Date.now() - this._bootedAt : 0,
             },
         };
-        for (const subsystem of this._subsystems) {
+        // Parallelized health checks with individual timeout guards (RFC-0015)
+        const healthPromises = this._subsystems.map(async (subsystem) => {
             try {
-                report[subsystem.name] = await subsystem.health();
+                const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error(`Health check timeout for ${subsystem.name}`)), 2000));
+                const health = await Promise.race([subsystem.health(), timeoutPromise]);
+                return { name: subsystem.name, health };
             }
             catch (err) {
-                report[subsystem.name] = {
-                    status: 'unhealthy',
-                    lastError: err instanceof Error ? err.message : String(err),
-                    uptimeMs: 0,
+                return {
+                    name: subsystem.name,
+                    health: {
+                        status: 'unhealthy',
+                        lastError: err instanceof Error ? err.message : String(err),
+                        uptimeMs: 0,
+                    },
                 };
+            }
+        });
+        const results = await Promise.allSettled(healthPromises);
+        for (const res of results) {
+            if (res.status === 'fulfilled') {
+                report[res.value.name] = res.value.health;
             }
         }
         return report;

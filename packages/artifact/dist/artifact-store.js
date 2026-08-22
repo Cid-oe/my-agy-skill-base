@@ -7,8 +7,10 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ArtifactStore = void 0;
 const node_crypto_1 = require("node:crypto");
+const node_stream_1 = require("node:stream");
 const shared_1 = require("@agy/shared");
 class ArtifactStore {
+    id = (0, shared_1.asUUID)('artifact-store');
     name = 'artifact-store';
     _blobs = new Map();
     _envelopes = new Map();
@@ -26,13 +28,17 @@ class ArtifactStore {
     async shutdown() {
         this._isReady = false;
     }
+    // ISubsystem compliance
+    async start() { return this.boot(); }
+    async stop() { return this.shutdown(); }
+    async getHealth() { return Promise.resolve(this.health()); }
     health() {
         return {
             status: this._isReady ? 'healthy' : 'unhealthy',
             uptimeMs: this._bootTime ? Date.now() - this._bootTime : 0,
         };
     }
-    async put(content, metadata = {}, createdBy = { id: 'system', version: '0.1.0' }, mimeType = 'application/octet-stream') {
+    async put(content, metadata = {}, createdBy = { id: 'system', version: (0, shared_1.asSemVer)('0.1.0') }, mimeType = 'application/octet-stream') {
         if (!this._isReady) {
             throw new shared_1.AgyError('ArtifactStore is not ready', {
                 code: 'STORE_NOT_READY',
@@ -45,7 +51,7 @@ class ArtifactStore {
             : typeof content === 'string'
                 ? Buffer.from(content, 'utf-8')
                 : Buffer.from(content);
-        const hash = (0, node_crypto_1.createHash)('sha256').update(buffer).digest('hex');
+        const hash = (0, shared_1.asHash)((0, node_crypto_1.createHash)('sha256').update(buffer).digest('hex'));
         // Natural deduplication
         if (this._envelopes.has(hash)) {
             const existing = this._envelopes.get(hash);
@@ -56,7 +62,7 @@ class ArtifactStore {
             hash,
             size: buffer.length,
             mimeType,
-            createdBy,
+            createdBy: { id: createdBy.id, version: (0, shared_1.asSemVer)(createdBy.version) },
             refCount: 1,
             createdAt: Date.now(),
             metadata,
@@ -65,7 +71,7 @@ class ArtifactStore {
         this._envelopes.set(hash, envelope);
         if (this._eventBus) {
             await this._eventBus.publish('artifact.created', {
-                id: (0, node_crypto_1.randomUUID)(),
+                id: (0, shared_1.asUUID)((0, node_crypto_1.randomUUID)()),
                 topic: 'artifact.created',
                 key: hash,
                 payload: { hash, size: envelope.size, mimeType },
@@ -74,9 +80,34 @@ class ArtifactStore {
         }
         return { ...envelope };
     }
+    async putStream(stream, metadata = {}, createdBy = { id: 'system', version: (0, shared_1.asSemVer)('0.1.0') }, mimeType = 'application/octet-stream') {
+        const chunks = [];
+        for await (const chunk of stream) {
+            chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+        }
+        const combined = Buffer.concat(chunks);
+        return this.put(combined, metadata, createdBy, mimeType);
+    }
     async get(hash) {
         const buffer = this._blobs.get(hash);
-        return buffer ? Buffer.from(buffer) : null;
+        if (!buffer)
+            return null;
+        // Verify SHA-256 integrity on read
+        const derived = (0, shared_1.asHash)((0, node_crypto_1.createHash)('sha256').update(buffer).digest('hex'));
+        if (derived !== hash) {
+            throw new shared_1.AgyError(`Integrity check failed for artifact ${hash}. Computed ${derived}`, {
+                code: 'ARTIFACT_CORRUPTED',
+                subsystem: 'artifact',
+                retryable: false,
+            });
+        }
+        return Buffer.from(buffer);
+    }
+    async getStream(hash) {
+        const buffer = await this.get(hash);
+        if (!buffer)
+            return null;
+        return node_stream_1.Readable.from(buffer);
     }
     async getEnvelope(hash) {
         const envelope = this._envelopes.get(hash);

@@ -4,7 +4,7 @@
  */
 
 import { ExecutionPlan, PlanNode, SubsystemHealth, UUID } from '@agy/shared';
-import { ISubsystem } from '@agy/kernel';
+import { ISubsystem } from '@agy/shared';
 import { ISkillRegistry } from '@agy/registry';
 
 export interface Goal {

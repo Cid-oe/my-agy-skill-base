@@ -2,9 +2,19 @@
  * Canonical types and interfaces for the AGY Kernel ecosystem.
  * Strictly implements Phase 3 and Phase 4 of the AGY Kernel Implementation Plan.
  */
-export type UUID = string;
-export type Hash = string;
-export type SemVer = string;
+export type UUID = string & {
+    __brand: 'UUID';
+};
+export type Hash = string & {
+    __brand: 'Hash';
+};
+export type SemVer = string & {
+    __brand: 'SemVer';
+};
+/** Utility helpers to create branded values */
+export declare const asUUID: (s: string) => UUID;
+export declare const asHash: (s: string) => Hash;
+export declare const asSemVer: (s: string) => SemVer;
 export type Timestamp = number;
 export type SkillLifecycleState = 'unloaded' | 'loading' | 'loaded' | 'active' | 'draining' | 'failed';
 export interface Predicate {

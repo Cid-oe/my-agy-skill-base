@@ -9,7 +9,11 @@ exports.SkillLoader = void 0;
 const node_crypto_1 = require("node:crypto");
 const shared_1 = require("@agy/shared");
 class SkillLoader {
+    id = (0, shared_1.asUUID)('skill-loader');
     name = 'skill-loader';
+    async start() { await this.boot(); }
+    async stop() { await this.shutdown(); }
+    async getHealth() { return Promise.resolve(this.health()); }
     _registry;
     _eventBus;
     _loadedSkills = new Map();
@@ -89,7 +93,7 @@ class SkillLoader {
         this._loadedSkills.set(id, loadedSkill);
         if (this._eventBus) {
             await this._eventBus.publish('skill.loaded', {
-                id: (0, node_crypto_1.randomUUID)(),
+                id: (0, shared_1.asUUID)((0, node_crypto_1.randomUUID)()),
                 topic: 'skill.loaded',
                 key: id,
                 payload: { id, version: manifest.version },
@@ -98,22 +102,43 @@ class SkillLoader {
         }
         return loadedSkill;
     }
+    async acquire(id) {
+        const loaded = this._loadedSkills.get(id);
+        if (loaded) {
+            loaded.refCount++;
+            return loaded;
+        }
+        return this.load(id);
+    }
+    async release(target) {
+        const instance = typeof target === 'string'
+            ? this._drainingSkills.get(target) || this._loadedSkills.get(target)
+            : target;
+        if (!instance)
+            return;
+        if (instance.refCount > 0) {
+            instance.refCount--;
+        }
+        if (instance.handle.lifecycleState === 'draining' && instance.refCount <= 0) {
+            await instance.dispose();
+            this._drainingSkills.delete(instance.manifest.id);
+        }
+    }
     async unload(id) {
         const loaded = this._loadedSkills.get(id);
         if (!loaded)
             return false;
-        if (loaded.refCount > 1) {
-            loaded.refCount--;
-            return false; // Still referenced by in-flight tasks
-        }
-        loaded.handle.lifecycleState = 'draining';
-        this._drainingSkills.set(id, loaded);
         this._loadedSkills.delete(id);
-        await loaded.dispose();
-        this._drainingSkills.delete(id);
+        if (loaded.refCount > 0) {
+            loaded.handle.lifecycleState = 'draining';
+            this._drainingSkills.set(id, loaded);
+        }
+        else {
+            await loaded.dispose();
+        }
         if (this._eventBus) {
             await this._eventBus.publish('skill.unloaded', {
-                id: (0, node_crypto_1.randomUUID)(),
+                id: (0, shared_1.asUUID)((0, node_crypto_1.randomUUID)()),
                 topic: 'skill.unloaded',
                 key: id,
                 payload: { id },
@@ -128,15 +153,12 @@ class SkillLoader {
             oldInstance.handle.lifecycleState = 'draining';
             this._drainingSkills.set(id, oldInstance);
             this._loadedSkills.delete(id);
-        }
-        const newInstance = await this.load(id);
-        if (oldInstance) {
-            setTimeout(async () => {
+            if (oldInstance.refCount === 0) {
                 await oldInstance.dispose();
                 this._drainingSkills.delete(id);
-            }, 100);
+            }
         }
-        return newInstance;
+        return this.load(id);
     }
 }
 exports.SkillLoader = SkillLoader;

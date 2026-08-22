@@ -5,7 +5,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { Capability, Lease, PolicyDecision, PolicyRequest, SubsystemHealth, UUID, AgyError } from '@agy/shared';
+import { Capability, Lease, PolicyDecision, PolicyRequest, SubsystemHealth, UUID, asUUID, AgyError } from '@agy/shared';
 import { IRuntimeState } from '@agy/runtime-state';
 import { IPolicy, IPolicyEngine } from './interfaces.js';
 
@@ -14,6 +14,7 @@ export interface PolicyEngineOptions {
 }
 
 export class PolicyEngine implements IPolicyEngine {
+  public readonly id: UUID = asUUID('policy-engine');
   public readonly name = 'policy-engine';
   private _policies: IPolicy[] = [];
   private _runtimeState?: IRuntimeState;
@@ -32,6 +33,10 @@ export class PolicyEngine implements IPolicyEngine {
   public async shutdown(): Promise<void> {
     this._isReady = false;
   }
+
+  public async start(): Promise<void> { await this.boot(); }
+  public async stop(): Promise<void> { await this.shutdown(); }
+  public async getHealth(): Promise<SubsystemHealth> { return Promise.resolve(this.health()); }
 
   public health(): SubsystemHealth {
     return {
@@ -60,16 +65,19 @@ export class PolicyEngine implements IPolicyEngine {
     }
 
     if (this._policies.length === 0) {
-      // Default allow if no restrictive policies installed
+      // Fail-closed default (RFC-0003a)
       return {
         requestId: request.requestId,
         subject: request.subject,
         capability: request.capability,
-        decision: 'allow',
-        reason: 'Default permit: No policies registered',
+        decision: 'deny',
+        reason: 'Default deny: No matching permit policy',
         policyVersion: '1.0.0',
       };
     }
+
+    let hasExplicitAllow = false;
+    let allowReason = 'Permitted: All registered policies granted approval';
 
     // Evaluate policies in priority order with Deny-Overrides (RFC-0003a)
     for (const policy of this._policies) {
@@ -82,6 +90,21 @@ export class PolicyEngine implements IPolicyEngine {
           capability: request.capability,
         };
       }
+      if (decision.decision === 'allow') {
+        hasExplicitAllow = true;
+        allowReason = decision.reason || allowReason;
+      }
+    }
+
+    if (!hasExplicitAllow) {
+      return {
+        requestId: request.requestId,
+        subject: request.subject,
+        capability: request.capability,
+        decision: 'deny',
+        reason: 'Default deny: No matching permit policy',
+        policyVersion: '1.0.0',
+      };
     }
 
     return {
@@ -89,7 +112,7 @@ export class PolicyEngine implements IPolicyEngine {
       subject: request.subject,
       capability: request.capability,
       decision: 'allow',
-      reason: 'Permitted: All registered policies granted approval',
+      reason: allowReason,
       policyVersion: '1.0.0',
     };
   }
@@ -100,7 +123,7 @@ export class PolicyEngine implements IPolicyEngine {
     ttlMs: number = 60000
   ): Promise<Lease> {
     const lease: Lease = {
-      leaseId: randomUUID(),
+      leaseId: asUUID(randomUUID()),
       subject,
       capabilities: capabilities.map((c) => ({ ...c })),
       issuedAt: Date.now(),
@@ -125,10 +148,18 @@ export class PolicyEngine implements IPolicyEngine {
     if (lease.revoked) return false;
     if (Date.now() > lease.expiresAt) return false;
 
-    // Check capability matching
-    return lease.capabilities.some(
-      (c) => c.name === requestedCapability.name && (c.scope === '*' || c.scope === requestedCapability.scope)
-    );
+    // Check capability matching with scope normalization and subpath containment
+    return lease.capabilities.some((c) => {
+      if (c.name !== requestedCapability.name) return false;
+      if (c.scope === '*' || c.scope === requestedCapability.scope) return true;
+
+      // Subpath containment check (e.g. /workspace/project matches /workspace/project/subfile)
+      if (c.scope && requestedCapability.scope && requestedCapability.scope.startsWith(c.scope)) {
+        return true;
+      }
+
+      return false;
+    });
   }
 
   public async revokeLease(leaseId: UUID): Promise<boolean> {
@@ -136,5 +167,21 @@ export class PolicyEngine implements IPolicyEngine {
       return await this._runtimeState.revokeLease(leaseId);
     }
     return false;
+  }
+
+  public async sweepExpiredLeases(): Promise<number> {
+    if (!this._runtimeState) return 0;
+    const snapshot = this._runtimeState.getSnapshot();
+    const now = Date.now();
+    let swept = 0;
+
+    for (const [id, lease] of Object.entries(snapshot.leases)) {
+      if (!lease.revoked && now > lease.expiresAt) {
+        await this._runtimeState.revokeLease(asUUID(id));
+        swept++;
+      }
+    }
+
+    return swept;
   }
 }

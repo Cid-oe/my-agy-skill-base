@@ -7,12 +7,13 @@ const node_test_1 = require("node:test");
 const node_assert_1 = __importDefault(require("node:assert"));
 const reflection_engine_js_1 = require("./reflection-engine.js");
 const runtime_state_1 = require("@agy/runtime-state");
+const shared_1 = require("@agy/shared");
 (0, node_test_1.test)('ReflectionEngine performs read-only introspection over runtime state', async () => {
     const state = new runtime_state_1.RuntimeState();
     await state.boot();
-    await state.trackPlan('plan-reflection-test');
+    await state.trackPlan((0, shared_1.asUUID)('plan-reflection-test'));
     await state.grantLease({
-        leaseId: 'lease-ref-1',
+        leaseId: (0, shared_1.asUUID)('lease-ref-1'),
         subject: 'skill-alpha',
         capabilities: [],
         issuedAt: Date.now(),

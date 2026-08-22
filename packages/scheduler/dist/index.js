@@ -20,4 +20,6 @@ var __exportStar = (this && this.__exportStar) || function(m, exports) {
 Object.defineProperty(exports, "__esModule", { value: true });
 __exportStar(require("./interfaces.js"), exports);
 __exportStar(require("./scheduler.js"), exports);
+const scheduler_js_1 = require("./scheduler.js");
+global.Scheduler = scheduler_js_1.Scheduler;
 //# sourceMappingURL=index.js.map

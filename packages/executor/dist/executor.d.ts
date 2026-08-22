@@ -3,21 +3,14 @@
  * Manages worker pool concurrency, hard resource execution limits,
  * crash isolation, artifact ingestion/emission, and event bus notification (RFC-0008).
  */
-import { ExecutionLimits, ExecutionResult, SubsystemHealth, TaskContext } from '@agy/shared';
-import { IEventBus } from '@agy/event-bus';
-import { ISkillLoader } from '@agy/registry';
-import { IArtifactStore } from '@agy/artifact';
-import { IExecutor, PoolStatus } from './interfaces.js';
-export interface ExecutorOptions {
-    skillLoader: ISkillLoader;
-    artifactStore?: IArtifactStore;
-    eventBus?: IEventBus;
-    maxWorkers?: number;
-}
+import { ExecutionLimits, ExecutionResult, SubsystemHealth, TaskContext, UUID } from '@agy/shared';
+import { ExecutorOptions, IExecutor, PoolStatus } from './interfaces.js';
 export declare class Executor implements IExecutor {
     readonly name = "executor";
+    readonly id: UUID;
     private _skillLoader;
     private _artifactStore?;
+    private _policyEngine?;
     private _eventBus?;
     private _maxWorkers;
     private _activeWorkers;
@@ -25,6 +18,9 @@ export declare class Executor implements IExecutor {
     private _isReady;
     private _bootTime;
     constructor(options: ExecutorOptions);
+    start(): Promise<void>;
+    stop(): Promise<void>;
+    getHealth(): Promise<SubsystemHealth>;
     boot(): Promise<void>;
     shutdown(): Promise<void>;
     health(): SubsystemHealth;

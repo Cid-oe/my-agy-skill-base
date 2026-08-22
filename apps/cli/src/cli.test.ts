@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
 import { createCliRuntime, handleCliCommand } from './cli.js';
-import { SkillManifest } from '@agy/shared';
+import { SkillManifest, asSemVer } from '@agy/shared';
 
 test('CLI status command inspects runtime and subsystems', async () => {
   const rt = await createCliRuntime();
@@ -20,7 +20,7 @@ test('CLI skill install and run executes full end-to-end workflow', async () => 
   const manifest: SkillManifest = {
     id: 'cli-sample-skill',
     name: 'CLI Sample Skill',
-    version: '1.0.0',
+    version: asSemVer('1.0.0'),
     description: 'Executes sample workflow',
     priority: 'high',
     requires: [],
@@ -42,6 +42,16 @@ test('CLI skill install and run executes full end-to-end workflow', async () => 
   const runRes = await handleCliCommand(['run', 'Process data', 'SampleArtifact'], rt);
   assert.strictEqual(runRes.success, true);
   assert.strictEqual(runRes.output.includes('Executed plan'), true);
+
+  // Skill list verification
+  const listRes = await handleCliCommand(['skill', 'list'], rt);
+  assert.strictEqual(listRes.success, true);
+  assert.strictEqual(listRes.output.includes('cli-sample-skill@1.0.0'), true);
+
+  // Invalid JSON error handling
+  const badJsonRes = await handleCliCommand(['skill', 'install', '{not-valid-json}'], rt);
+  assert.strictEqual(badJsonRes.success, false);
+  assert.strictEqual(badJsonRes.output.includes('Invalid JSON manifest'), true);
 
   await rt.kernel.shutdown();
 });

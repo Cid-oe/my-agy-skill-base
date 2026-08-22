@@ -51,6 +51,43 @@ const event_bus_1 = require("@agy/event-bus");
     node_assert_1.default.strictEqual(report.deletedCount, 0);
     const stillThere = await store.get(env.hash);
     node_assert_1.default.notStrictEqual(stillThere, null);
+    // Unpin and re-run GC
+    await store.unpin(env.hash);
+    const unpinnedReport = await store.gc();
+    node_assert_1.default.strictEqual(unpinnedReport.deletedCount, 1);
+    node_assert_1.default.strictEqual(await store.get(env.hash), null);
+    await store.shutdown();
+});
+(0, node_test_1.test)('ArtifactStore supports streaming reads and writes', async () => {
+    const store = new artifact_store_js_1.ArtifactStore();
+    await store.boot();
+    const streamContent = 'Streaming large artifact content payload';
+    const { Readable } = await import('node:stream');
+    const readStream = Readable.from(Buffer.from(streamContent));
+    const envelope = await store.putStream(readStream, { type: 'STREAM_TEST' });
+    node_assert_1.default.strictEqual(envelope.size, Buffer.from(streamContent).length);
+    const outStream = await store.getStream(envelope.hash);
+    node_assert_1.default.notStrictEqual(outStream, null);
+    const chunks = [];
+    for await (const chunk of outStream) {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    const result = Buffer.concat(chunks).toString('utf-8');
+    node_assert_1.default.strictEqual(result, streamContent);
+    await store.shutdown();
+});
+(0, node_test_1.test)('ArtifactStore validates SHA-256 integrity on read and rejects corrupted blobs', async () => {
+    const store = new artifact_store_js_1.ArtifactStore();
+    await store.boot();
+    const envelope = await store.put('Original Content');
+    // Intentionally mutate internal blob storage
+    const corruptedBuffer = Buffer.from('Tampered Content');
+    store._blobs.set(envelope.hash, corruptedBuffer);
+    await node_assert_1.default.rejects(async () => {
+        await store.get(envelope.hash);
+    }, (err) => {
+        return err.code === 'ARTIFACT_CORRUPTED';
+    });
     await store.shutdown();
 });
 //# sourceMappingURL=artifact-store.test.js.map

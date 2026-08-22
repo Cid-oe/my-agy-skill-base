@@ -4,7 +4,7 @@
  * lease metrics, and system diagnostics without state mutation paths (RFC-0011).
  */
 
-import { SubsystemHealth, AgyError } from '@agy/shared';
+import { SubsystemHealth, AgyError, UUID, asUUID, Lease } from '@agy/shared';
 import { IRuntimeState } from '@agy/runtime-state';
 import { IReflectionEngine, ReflectionReport } from './interfaces.js';
 
@@ -13,13 +13,27 @@ export interface ReflectionEngineOptions {
 }
 
 export class ReflectionEngine implements IReflectionEngine {
+  public readonly id: UUID = asUUID('reflection');
   public readonly name = 'reflection';
+
   private _runtimeState: IRuntimeState;
   private _isReady = false;
-  private _bootTime = 0;
+  private _bootTime?: number;
 
   constructor(options: ReflectionEngineOptions) {
     this._runtimeState = options.runtimeState;
+  }
+
+  public async start(): Promise<void> {
+    await this.boot();
+  }
+
+  public async stop(): Promise<void> {
+    await this.shutdown();
+  }
+
+  public async getHealth(): Promise<SubsystemHealth> {
+    return Promise.resolve(this.health());
   }
 
   public async boot(): Promise<void> {
@@ -48,7 +62,10 @@ export class ReflectionEngine implements IReflectionEngine {
     }
 
     const snapshot = this._runtimeState.getSnapshot();
-    const activeLeaseCount = Object.values(snapshot.leases).filter((l) => !l.revoked).length;
+    const now = Date.now();
+    const activeLeaseCount = (Object.values(snapshot.leases) as Lease[]).filter(
+      (l: Lease) => !l.revoked && now <= l.expiresAt
+    ).length;
     const activePlanCount = snapshot.activePlans.length;
 
     const diagnostics: string[] = [

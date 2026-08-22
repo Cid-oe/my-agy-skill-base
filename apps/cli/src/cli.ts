@@ -13,7 +13,7 @@ import { SkillResolver } from '@agy/resolver';
 import { Scheduler } from '@agy/scheduler';
 import { Executor } from '@agy/executor';
 import { ReflectionEngine } from '@agy/reflection';
-import { SkillManifest } from '@agy/shared';
+import { SkillManifest, TaskContext, PlanNode, SubsystemHealth } from '@agy/shared';
 
 export interface CliRuntime {
   kernel: Kernel;
@@ -47,7 +47,7 @@ export async function createCliRuntime(): Promise<CliRuntime> {
   const reflection = new ReflectionEngine({ runtimeState: state });
 
   // Connect scheduler task dispatcher to executor
-  scheduler.registerDispatcher(async (task, node) => {
+  scheduler.registerDispatcher(async (task: TaskContext, node: PlanNode) => {
     await executor.execute(task, node.limits);
   });
 
@@ -97,7 +97,7 @@ export async function handleCliCommand(
         `Active Plans: ${report.activePlanCount}`,
         `Active Leases: ${report.activeLeaseCount}`,
         '--- Subsystem Health ---',
-        ...Object.entries(health).map(([k, v]) => `  ${k}: ${v.status}`),
+        ...Object.entries(health).map(([k, v]) => `  ${k}: ${(v as SubsystemHealth).status}`),
       ].join('\n');
 
       return { success: true, output: summary };
@@ -108,9 +108,29 @@ export async function handleCliCommand(
       if (!manifestJson) {
         return { success: false, output: 'Missing manifest payload' };
       }
-      const manifest = JSON.parse(manifestJson) as SkillManifest;
+      let manifest: SkillManifest;
+      try {
+        manifest = JSON.parse(manifestJson) as SkillManifest;
+      } catch (e) {
+        return { success: false, output: `Invalid JSON manifest: ${e instanceof Error ? e.message : String(e)}` };
+      }
       const handle = await rt.registry.register(manifest);
       return { success: true, output: `Installed skill ${handle.id}@${handle.version}` };
+    }
+
+    if (cmd === 'skill' && subcmd === 'list') {
+      const skills = rt.registry.listAll();
+      const output = [
+        `=== Registered Skills (${skills.length}) ===`,
+        ...skills.map((s) => `  - ${s.id}@${s.version} [${s.name}] produces: [${s.produces.join(', ')}]`),
+      ].join('\n');
+      return { success: true, output };
+    }
+
+    if (cmd === 'skill' && subcmd === 'scan') {
+      const scanDir = rest[0] || process.cwd();
+      const discovered = await rt.registry.scan([scanDir]);
+      return { success: true, output: `Scanned ${scanDir}: found and registered ${discovered.length} skills` };
     }
 
     if (cmd === 'run') {
@@ -145,7 +165,7 @@ export async function handleCliCommand(
 
     return {
       success: false,
-      output: `Unknown command: ${args.join(' ')}. Available commands: status, skill install <json>, run <goal> <artifact>`,
+      output: `Unknown command: ${args.join(' ')}. Available commands: status, skill list, skill scan [dir], skill install <json>, run <goal> <artifact>`,
     };
   } finally {
     if (!runtime) {

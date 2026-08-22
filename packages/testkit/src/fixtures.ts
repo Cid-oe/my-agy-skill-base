@@ -2,13 +2,13 @@
  * Test fixtures, fake sandboxes, and synthetic manifest generators for test suites and scale benchmarks.
  */
 
-import { SkillManifest } from '@agy/shared';
+import { SkillManifest, asSemVer } from '@agy/shared';
 
 export function generateSyntheticManifest(id: string, options: Partial<SkillManifest> = {}): SkillManifest {
   return {
     id,
     name: `Skill ${id}`,
-    version: '1.0.0',
+    version: asSemVer('1.0.0'),
     description: `Synthetic skill ${id} for scale testing`,
     priority: options.priority || 'medium',
     requires: options.requires || [],

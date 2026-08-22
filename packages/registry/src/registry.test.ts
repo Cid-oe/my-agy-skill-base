@@ -3,12 +3,12 @@ import assert from 'node:assert';
 import { SkillRegistry } from './registry.js';
 import { SkillLoader } from './loader.js';
 import { EventBus } from '@agy/event-bus';
-import { SkillManifest } from '@agy/shared';
+import { SkillManifest, asSemVer } from '@agy/shared';
 
 const sampleManifest: SkillManifest = {
   id: 'security-audit',
   name: 'Security Audit',
-  version: '2.0.0',
+  version: asSemVer('2.0.0'),
   description: 'Audits code changes for security vulnerabilities',
   priority: 'high',
   requires: [],
@@ -61,10 +61,96 @@ test('SkillLoader loads and executes skill instances with drain lifecycle', asyn
   const result = (await loaded.execute({ test: 123 })) as { skillId: string };
   assert.strictEqual(result.skillId, 'security-audit');
 
-  // Hot reload dual-host drain protocol
-  const reloaded = await loader.reload('security-audit');
-  assert.strictEqual(reloaded.handle.lifecycleState, 'loaded');
+  await loader.shutdown();
+  await registry.shutdown();
+});
+
+test('SkillRegistry quarantines and rejects invalid manifests', async () => {
+  const registry = new SkillRegistry();
+  await registry.boot();
+
+  await assert.rejects(
+    async () => {
+      await registry.register({} as any, 'corrupted/path');
+    },
+    (err: any) => {
+      return err.code === 'MANIFEST_INVALID';
+    }
+  );
+
+  const quarantined = registry.getQuarantined();
+  assert.strictEqual(quarantined.length, 1);
+  assert.strictEqual(quarantined[0].path, 'corrupted/path');
+
+  await registry.shutdown();
+});
+
+test('SkillLoader acquires, releases, and drains instances properly during reload', async () => {
+  const registry = new SkillRegistry();
+  await registry.boot();
+  await registry.register(sampleManifest);
+
+  const loader = new SkillLoader({ registry });
+  await loader.boot();
+
+  // In-flight task acquires skill
+  const instance1 = await loader.acquire('security-audit');
+  assert.strictEqual(instance1.refCount, 1);
+
+  // Reload while task is running
+  const instance2 = await loader.reload('security-audit');
+  assert.strictEqual(instance1.handle.lifecycleState, 'draining');
+  assert.strictEqual(instance2.handle.lifecycleState, 'loaded');
+
+  // Task completes and releases old instance
+  await loader.release('security-audit');
+  assert.strictEqual(instance1.handle.lifecycleState, 'unloaded');
 
   await loader.shutdown();
   await registry.shutdown();
+});
+
+test('SkillRegistry scans directory roots for manifests', async () => {
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const fs = await import('node:fs');
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agy-scan-test-'));
+
+  try {
+    const skillDir = path.join(tempDir, 'my-scanned-skill');
+    fs.mkdirSync(skillDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(skillDir, 'manifest.json'),
+      JSON.stringify({
+        id: 'scanned-skill-1',
+        name: 'Scanned Skill',
+        version: '1.0.0',
+        description: 'Auto scanned skill',
+        priority: 'medium',
+        requires: [],
+        optional: [],
+        consumes: [],
+        produces: ['ScannedReport'],
+        exclusiveWith: [],
+        confidenceThreshold: 0.8,
+        triggerPredicates: [],
+        permissions: [],
+        capabilities: ['scanner'],
+        entryPoint: 'index.ts',
+      }),
+      'utf-8'
+    );
+
+    const registry = new SkillRegistry();
+    await registry.boot();
+
+    const discovered = await registry.scan([tempDir]);
+    assert.strictEqual(discovered.length, 1);
+    assert.strictEqual(discovered[0].id, 'scanned-skill-1');
+    assert.strictEqual(registry.findByProduces('ScannedReport').length, 1);
+
+    await registry.shutdown();
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
 });

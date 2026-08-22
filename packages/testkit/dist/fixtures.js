@@ -5,11 +5,12 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.generateSyntheticManifest = generateSyntheticManifest;
 exports.generateSyntheticCatalog = generateSyntheticCatalog;
+const shared_1 = require("@agy/shared");
 function generateSyntheticManifest(id, options = {}) {
     return {
         id,
         name: `Skill ${id}`,
-        version: '1.0.0',
+        version: (0, shared_1.asSemVer)('1.0.0'),
         description: `Synthetic skill ${id} for scale testing`,
         priority: options.priority || 'medium',
         requires: options.requires || [],

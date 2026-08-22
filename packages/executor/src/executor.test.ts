@@ -4,12 +4,12 @@ import { Executor } from './executor.js';
 import { SkillRegistry, SkillLoader } from '@agy/registry';
 import { ArtifactStore } from '@agy/artifact';
 import { EventBus } from '@agy/event-bus';
-import { ICancellationToken, SkillManifest, TaskContext } from '@agy/shared';
+import { ICancellationToken, SkillManifest, TaskContext, asUUID, asSemVer } from '@agy/shared';
 
 const sampleSkill: SkillManifest = {
   id: 'unit-tester',
   name: 'Unit Tester',
-  version: '1.0.0',
+  version: asSemVer('1.0.0'),
   description: 'Executes test suites',
   priority: 'high',
   requires: [],
@@ -52,11 +52,11 @@ test('Executor executes tasks, bounds worker concurrency, and produces artifacts
   };
 
   const task: TaskContext = {
-    taskId: 'task-100',
-    nodeId: 'node-100',
-    planId: 'plan-100',
+    taskId: asUUID('task-100'),
+    nodeId: asUUID('node-100'),
+    planId: asUUID('plan-100'),
     lease: {
-      leaseId: 'lease-100',
+      leaseId: asUUID('lease-100'),
       subject: 'unit-tester',
       capabilities: [],
       issuedAt: Date.now(),
@@ -67,7 +67,7 @@ test('Executor executes tasks, bounds worker concurrency, and produces artifacts
   };
 
   const result = await executor.execute(task);
-  assert.strictEqual(result.taskId, 'task-100');
+  assert.strictEqual(result.taskId, asUUID('task-100'));
   assert.strictEqual(result.outputArtifacts.length, 1);
   assert.strictEqual(typeof result.outputArtifacts[0].hash, 'string');
 
@@ -80,4 +80,103 @@ test('Executor executes tasks, bounds worker concurrency, and produces artifacts
   await loader.shutdown();
   await registry.shutdown();
   await bus.shutdown();
+});
+
+test('Executor stamps exact skill version on produced artifacts for provenance', async () => {
+  const customSkill: SkillManifest = {
+    ...sampleSkill,
+    id: 'versioned-skill',
+    version: asSemVer('3.7.2'),
+  };
+
+  const registry = new SkillRegistry();
+  await registry.boot();
+  await registry.register(customSkill);
+
+  const loader = new SkillLoader({ registry });
+  await loader.boot();
+
+  const store = new ArtifactStore();
+  await store.boot();
+
+  const executor = new Executor({ skillLoader: loader, artifactStore: store });
+  await executor.boot();
+
+  const task: TaskContext = {
+    taskId: asUUID('task-prov'),
+    nodeId: asUUID('node-prov'),
+    planId: asUUID('plan-prov'),
+    lease: {
+      leaseId: asUUID('lease-prov'),
+      subject: 'versioned-skill',
+      capabilities: [],
+      issuedAt: Date.now(),
+      expiresAt: Date.now() + 60000,
+      revoked: false,
+    },
+    cancellationToken: { isCancellationRequested: false, onCancelled: () => {} },
+  };
+
+  const result = await executor.execute(task);
+  assert.strictEqual(result.outputArtifacts.length, 1);
+  assert.strictEqual(result.outputArtifacts[0].createdBy.version, '3.7.2');
+
+  await executor.shutdown();
+  await store.shutdown();
+  await loader.shutdown();
+  await registry.shutdown();
+});
+
+test('Executor enforces timeouts and frees worker slot immediately', async () => {
+  const hangingSkill: SkillManifest = {
+    ...sampleSkill,
+    id: 'hanging-skill',
+  };
+
+  const registry = new SkillRegistry();
+  await registry.boot();
+  await registry.register(hangingSkill);
+
+  const loader = new SkillLoader({ registry });
+  await loader.boot();
+
+  // Override execute on loader to simulate hanging task
+  const loaded = await loader.load('hanging-skill');
+  loaded.execute = async () => {
+    await new Promise((r) => setTimeout(r, 200));
+  };
+
+  const executor = new Executor({ skillLoader: loader, maxWorkers: 1 });
+  await executor.boot();
+
+  const task: TaskContext = {
+    taskId: asUUID('task-hang'),
+    nodeId: asUUID('node-hang'),
+    planId: asUUID('plan-hang'),
+    lease: {
+      leaseId: asUUID('lease-hang'),
+      subject: 'hanging-skill',
+      capabilities: [],
+      issuedAt: Date.now(),
+      expiresAt: Date.now() + 60000,
+      revoked: false,
+    },
+    cancellationToken: { isCancellationRequested: false, onCancelled: () => {} },
+  };
+
+  await assert.rejects(
+    async () => {
+      await executor.execute(task, { maxDurationMs: 20 });
+    },
+    (err: any) => {
+      return err.code === 'EXECUTION_TIMEOUT';
+    }
+  );
+
+  // Worker slot should be freed immediately
+  assert.strictEqual(executor.getPoolStatus().activeWorkers, 0);
+
+  await executor.shutdown();
+  await loader.shutdown();
+  await registry.shutdown();
 });

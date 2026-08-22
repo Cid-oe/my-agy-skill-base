@@ -13,6 +13,10 @@ export interface SchedulerOptions {
     agingFactorMs?: number;
 }
 export declare class Scheduler implements IScheduler {
+    readonly id: UUID;
+    start(): Promise<void>;
+    stop(): Promise<void>;
+    getHealth(): Promise<SubsystemHealth>;
     readonly name = "scheduler";
     private _plans;
     private _planTokens;
@@ -35,6 +39,7 @@ export declare class Scheduler implements IScheduler {
     cancel(planId: UUID): Promise<boolean>;
     getPlanStatus(planId: UUID): string | null;
     tick(): Promise<number>;
+    private cleanupPlanExecutionResources;
     private findReadyNodes;
 }
 //# sourceMappingURL=scheduler.d.ts.map

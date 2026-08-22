@@ -3,7 +3,7 @@
  * Strictly implements Phase 3 (IReflectionEngine) and RFC-0011.
  */
 import { StateSnapshot, SubsystemHealth } from '@agy/shared';
-import { ISubsystem } from '@agy/kernel';
+import { ISubsystem } from '@agy/shared';
 export interface ReflectionReport {
     timestamp: number;
     runtimeVersion: number;

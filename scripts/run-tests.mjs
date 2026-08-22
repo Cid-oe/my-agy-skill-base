@@ -1,14 +1,28 @@
-import { globSync } from 'node:fs';
+import { readdirSync, statSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 
-const rawFiles = globSync([
-  'packages/*/dist/**/*.test.js',
-  'apps/*/dist/**/*.test.js',
-  'tests/dist/**/*.test.js',
-], { ignore: ['**/node_modules/**'] });
+function findTestFiles(dir, fileList = []) {
+  if (!statSync(dir).isDirectory()) return fileList;
+  const entries = readdirSync(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (entry.name !== 'node_modules' && entry.name !== '.git') {
+        findTestFiles(fullPath, fileList);
+      }
+    } else if (entry.isFile() && entry.name.endsWith('.test.js')) {
+      fileList.push(path.resolve(fullPath));
+    }
+  }
+  return fileList;
+}
 
-const testFiles = Array.from(new Set(rawFiles.map((f) => path.resolve(f))));
+const testRoots = ['packages', 'apps', 'tests'];
+const testFiles = testRoots.flatMap((root) => {
+  const rootPath = path.resolve(root);
+  return findTestFiles(rootPath);
+});
 
 console.log(`\n======================================================`);
 console.log(` Running ${testFiles.length} test suites across the AGY monorepo...`);

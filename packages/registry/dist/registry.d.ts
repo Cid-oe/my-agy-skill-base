@@ -3,13 +3,17 @@
  * Stores validated manifests, maintains inverted capability and produces indices,
  * manages quarantining, and integrates with the Event Bus (RFC-0002).
  */
-import { SkillHandle, SkillManifest, SubsystemHealth } from '@agy/shared';
+import { SkillHandle, SkillManifest, SubsystemHealth, UUID } from '@agy/shared';
 import { IEventBus } from '@agy/event-bus';
 import { ISkillRegistry, QuarantineRecord } from './interfaces.js';
 export interface SkillRegistryOptions {
     eventBus?: IEventBus;
 }
 export declare class SkillRegistry implements ISkillRegistry {
+    readonly id: UUID;
+    start(): Promise<void>;
+    stop(): Promise<void>;
+    getHealth(): Promise<SubsystemHealth>;
     readonly name = "skill-registry";
     private _manifests;
     private _activeVersions;
@@ -31,5 +35,6 @@ export declare class SkillRegistry implements ISkillRegistry {
     findByProduces(artifactType: string): SkillManifest[];
     findByCapability(tag: string): SkillManifest[];
     getQuarantined(): QuarantineRecord[];
+    scan(roots: string[]): Promise<SkillManifest[]>;
 }
 //# sourceMappingURL=registry.d.ts.map

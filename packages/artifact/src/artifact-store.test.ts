@@ -64,5 +64,57 @@ test('ArtifactStore respects pinned artifacts during GC', async () => {
   const stillThere = await store.get(env.hash);
   assert.notStrictEqual(stillThere, null);
 
+  // Unpin and re-run GC
+  await store.unpin(env.hash);
+  const unpinnedReport = await store.gc();
+  assert.strictEqual(unpinnedReport.deletedCount, 1);
+  assert.strictEqual(await store.get(env.hash), null);
+
+  await store.shutdown();
+});
+
+test('ArtifactStore supports streaming reads and writes', async () => {
+  const store = new ArtifactStore();
+  await store.boot();
+
+  const streamContent = 'Streaming large artifact content payload';
+  const { Readable } = await import('node:stream');
+  const readStream = Readable.from(Buffer.from(streamContent));
+
+  const envelope = await store.putStream(readStream, { type: 'STREAM_TEST' });
+  assert.strictEqual(envelope.size, Buffer.from(streamContent).length);
+
+  const outStream = await store.getStream(envelope.hash);
+  assert.notStrictEqual(outStream, null);
+
+  const chunks: Buffer[] = [];
+  for await (const chunk of outStream!) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  const result = Buffer.concat(chunks).toString('utf-8');
+  assert.strictEqual(result, streamContent);
+
+  await store.shutdown();
+});
+
+test('ArtifactStore validates SHA-256 integrity on read and rejects corrupted blobs', async () => {
+  const store = new ArtifactStore();
+  await store.boot();
+
+  const envelope = await store.put('Original Content');
+  
+  // Intentionally mutate internal blob storage
+  const corruptedBuffer = Buffer.from('Tampered Content');
+  (store as any)._blobs.set(envelope.hash, corruptedBuffer);
+
+  await assert.rejects(
+    async () => {
+      await store.get(envelope.hash);
+    },
+    (err: any) => {
+      return err.code === 'ARTIFACT_CORRUPTED';
+    }
+  );
+
   await store.shutdown();
 });
