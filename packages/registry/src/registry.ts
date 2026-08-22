@@ -202,29 +202,59 @@ export class SkillRegistry implements ISkillRegistry {
     return [...this._quarantine];
   }
 
-  public async scan(roots: string[]): Promise<SkillManifest[]> {
+  public async scan(roots: string[], maxDepth = 8): Promise<SkillManifest[]> {
     const fs = await import('node:fs');
     const path = await import('node:path');
     const discovered: SkillManifest[] = [];
+    const visited = new Set<string>();
+
+    const visit = async (dir: string, depth: number): Promise<void> => {
+      if (depth < 0) return;
+      let real: string;
+      try {
+        real = fs.realpathSync(dir);
+      } catch {
+        return;
+      }
+      if (visited.has(real)) return;
+      visited.add(real);
+
+      const manifestPath = path.join(dir, 'manifest.json');
+      if (fs.existsSync(manifestPath)) {
+        try {
+          const content = fs.readFileSync(manifestPath, 'utf-8');
+          const manifest = JSON.parse(content) as SkillManifest;
+          await this.register(manifest, dir);
+          discovered.push(manifest);
+        } catch (err: unknown) {
+          // Quarantine malformed manifests instead of silently dropping them (SRC-17).
+          const message = err instanceof Error ? err.message : String(err);
+          this._quarantine.push({
+            path: manifestPath,
+            reason: 'Malformed manifest: failed to parse or validate',
+            errors: [message],
+            timestamp: Date.now(),
+          });
+        }
+      }
+
+      // Recurse into subdirectories (bounded) instead of scanning one level (SRC-17).
+      let entries: import('node:fs').Dirent[];
+      try {
+        entries = fs.readdirSync(dir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const entry of entries) {
+        if (entry.isDirectory()) {
+          await visit(path.join(dir, entry.name), depth - 1);
+        }
+      }
+    };
 
     for (const root of roots) {
       if (!fs.existsSync(root)) continue;
-      const entries = fs.readdirSync(root, { withFileTypes: true });
-      for (const entry of entries) {
-        if (entry.isDirectory()) {
-          const manifestPath = path.join(root, entry.name, 'manifest.json');
-          if (fs.existsSync(manifestPath)) {
-            try {
-              const content = fs.readFileSync(manifestPath, 'utf-8');
-              const manifest = JSON.parse(content) as SkillManifest;
-              await this.register(manifest, root);
-              discovered.push(manifest);
-            } catch {
-              // Quarantined inside register
-            }
-          }
-        }
-      }
+      await visit(root, maxDepth);
     }
 
     return discovered;

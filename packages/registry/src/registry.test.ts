@@ -201,3 +201,59 @@ test('SkillRegistry scans directory roots for manifests', async () => {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
 });
+
+test('SkillRegistry scan quarantines malformed manifests and recurses nested dirs (SRC-17)', async () => {
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const fs = await import('node:fs');
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agy-scan-nested-'));
+
+  try {
+    const validManifest = {
+      id: 'nested-skill',
+      name: 'Nested',
+      version: '1.0.0',
+      description: 'deeply nested',
+      priority: 'medium',
+      requires: [],
+      optional: [],
+      consumes: [],
+      produces: ['NestedReport'],
+      exclusiveWith: [],
+      confidenceThreshold: 0.8,
+      triggerPredicates: [],
+      permissions: [],
+      capabilities: ['nested'],
+      entryPoint: 'index.ts',
+    };
+
+    // Valid skill nested TWO levels deep (root/group/nested-skill/manifest.json).
+    const deepDir = path.join(tempDir, 'group', 'nested-skill');
+    fs.mkdirSync(deepDir, { recursive: true });
+    fs.writeFileSync(path.join(deepDir, 'manifest.json'), JSON.stringify(validManifest), 'utf-8');
+
+    // Malformed manifest one level deep.
+    const badDir = path.join(tempDir, 'broken-skill');
+    fs.mkdirSync(badDir, { recursive: true });
+    fs.writeFileSync(path.join(badDir, 'manifest.json'), '{ this is not valid json', 'utf-8');
+
+    const registry = new SkillRegistry();
+    await registry.boot();
+    const discovered = await registry.scan([tempDir]);
+
+    // The deeply nested valid skill must be discovered (recursion).
+    assert.strictEqual(discovered.length, 1);
+    assert.strictEqual(discovered[0].id, 'nested-skill');
+    assert.strictEqual(registry.findByProduces('NestedReport').length, 1);
+
+    // The malformed manifest must be quarantined (not silently dropped).
+    const quarantined = registry.getQuarantined();
+    assert.strictEqual(quarantined.length, 1);
+    assert.ok(quarantined[0].path.includes('broken-skill'));
+    assert.ok(quarantined[0].errors.length > 0);
+
+    await registry.shutdown();
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
