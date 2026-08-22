@@ -81,6 +81,30 @@ test('Kernel rolls back booted subsystems in reverse order on boot failure', asy
   assert.strictEqual(sub1.shutDown, true); // Rolled back cleanly!
 });
 
+test('Kernel clears health-check timeout timers after resolution (SRC-19)', async () => {
+  const kernel = new Kernel();
+  kernel.registerSubsystem(new MockSubsystem('fast'));
+
+  await kernel.boot();
+
+  // Count long-lived (~2s) timeout handles before and after a health() call.
+  const longTimeouts = (): number =>
+    (process as unknown as { _getActiveHandles?: () => Array<{ _idleTimeout?: number }> })
+      ._getActiveHandles?.()
+      .filter((h) => h && typeof h._idleTimeout === 'number' && h._idleTimeout >= 1900)
+      .length ?? 0;
+
+  const before = longTimeouts();
+  await kernel.health();
+  // Let pending microtasks settle before re-checking active handles.
+  await new Promise((resolve) => setImmediate(resolve));
+  const after = longTimeouts();
+
+  assert.strictEqual(after, before, 'health() must not leave a pending 2s timeout handle');
+
+  await kernel.shutdown();
+});
+
 test('Kernel handles hanging subsystem health checks gracefully', async () => {
   const kernel = new Kernel();
   const sub1 = new MockSubsystem('sub1');
