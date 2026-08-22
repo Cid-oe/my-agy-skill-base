@@ -1,10 +1,11 @@
 /**
  * Concrete single-writer Runtime State implementation.
  * Guarantees monotonic versioning, copy-on-write immutable snapshots,
- * transactional atomicity, write-ahead logging (WAL), and event emission.
+ * transactional atomicity, write-ahead logging (WAL) with CRC integrity and
+ * checkpoint/compaction, and event emission.
  */
 
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import {
@@ -23,6 +24,8 @@ import {
 import { IEventBus } from '@agy/event-bus';
 import { IRuntimeState, RuntimeStateOptions, WalRecord } from './interfaces.js';
 
+const DEFAULT_CHECKPOINT_INTERVAL = 1000;
+
 export class RuntimeState implements IRuntimeState, ISubsystem {
   public readonly id: UUID = asUUID('runtime-state');
   public readonly name = 'runtime-state';
@@ -35,7 +38,6 @@ export class RuntimeState implements IRuntimeState, ISubsystem {
   private _leases = new Map<UUID, Lease>();
   private _ledgers = new Map<UUID, ExecutionLedger>();
   private _activePlans = new Set<UUID>();
-  private _walLog: Command[] = [];
   private _transactionQueue = Promise.resolve();
   private _isReady = false;
   private _bootTime = 0;
@@ -43,24 +45,42 @@ export class RuntimeState implements IRuntimeState, ISubsystem {
   private _persistenceDir?: string;
   private _walPersister?: (entry: Command) => Promise<void> | void;
   private _fsync: boolean;
+  private _checkpointInterval: number;
+  private _commandsSinceCheckpoint = 0;
 
   constructor(options: RuntimeStateOptions = {}) {
     this._eventBus = options.eventBus;
     this._persistenceDir = options.persistenceDir;
     this._walPersister = options.walPersister;
     this._fsync = options.fsync ?? true;
+    this._checkpointInterval = options.checkpointIntervalCommands ?? DEFAULT_CHECKPOINT_INTERVAL;
   }
 
   public async boot(): Promise<void> {
     this._isReady = true;
     this._bootTime = Date.now();
 
-    // Replay WAL on boot if persistence directory is specified
     if (this._persistenceDir) {
       const walDir = path.join(this._persistenceDir, 'wal');
       if (!fs.existsSync(walDir)) {
         fs.mkdirSync(walDir, { recursive: true });
       }
+
+      // 1. Load the latest snapshot (if any) to restore a baseline state.
+      const snapshotPath = path.join(walDir, 'snapshot.json');
+      let snapshotVersion = 0;
+      if (fs.existsSync(snapshotPath)) {
+        try {
+          const raw = JSON.parse(fs.readFileSync(snapshotPath, 'utf-8')) as { version: number; state: StateSnapshot };
+          this.restoreSnapshot(raw.state);
+          this._version = raw.version;
+          snapshotVersion = raw.version;
+        } catch {
+          // Corrupt snapshot: fall through to full WAL replay.
+        }
+      }
+
+      // 2. Replay WAL records with seq > snapshotVersion, verifying CRC.
       const walFile = path.join(walDir, 'current.wal');
       if (fs.existsSync(walFile)) {
         const content = fs.readFileSync(walFile, 'utf-8');
@@ -68,13 +88,21 @@ export class RuntimeState implements IRuntimeState, ISubsystem {
         for (const line of lines) {
           try {
             const record = JSON.parse(line) as WalRecord;
+            if (record.seq <= snapshotVersion) {
+              // Predates or belongs to the snapshot; already applied.
+              continue;
+            }
+            if (record.crc !== undefined && record.crc !== computeCrc(record.commands)) {
+              // Integrity failure: stop replay at the corrupt record.
+              break;
+            }
             for (const cmd of record.commands) {
               this.applyCommand(cmd);
-              this._walLog.push(cmd);
             }
             this._version = record.seq;
           } catch {
-            // Ignore malformed trailing records during recovery
+            // Ignore malformed trailing records during recovery.
+            break;
           }
         }
       }
@@ -165,37 +193,28 @@ export class RuntimeState implements IRuntimeState, ISubsystem {
             for (const cmd of commands) {
               this.applyCommand(cmd);
             }
-            
-            // All commands succeeded, commit to WAL
-            for (const cmd of commands) {
-              this._walLog.push(cmd);
-              if (this._walPersister) {
+
+            this._version++;
+
+            // Persist the WAL record. persistenceDir and walPersister are
+            // mutually exclusive to avoid double-persisting (SRC-13).
+            if (this._persistenceDir) {
+              this.appendWalRecord({
+                seq: this._version,
+                crc: computeCrc(commands),
+                timestamp: Date.now(),
+                commands,
+              });
+            } else if (this._walPersister) {
+              for (const cmd of commands) {
                 await this._walPersister(cmd);
               }
             }
 
-            this._version++;
-
-            if (this._persistenceDir) {
-              const walDir = path.join(this._persistenceDir, 'wal');
-              if (!fs.existsSync(walDir)) {
-                fs.mkdirSync(walDir, { recursive: true });
-              }
-              const walFile = path.join(walDir, 'current.wal');
-              const record: WalRecord = {
-                seq: this._version,
-                timestamp: Date.now(),
-                commands,
-              };
-              const fd = fs.openSync(walFile, 'a');
-              try {
-                fs.writeSync(fd, JSON.stringify(record) + '\n');
-                if (this._fsync) {
-                  fs.fsyncSync(fd);
-                }
-              } finally {
-                fs.closeSync(fd);
-              }
+            // Checkpoint/compaction to bound WAL growth (EX-5).
+            this._commandsSinceCheckpoint += commands.length;
+            if (this._persistenceDir && this._commandsSinceCheckpoint >= this._checkpointInterval) {
+              this.writeCheckpoint();
             }
 
             const txResult: TransactionResult = {
@@ -311,4 +330,72 @@ export class RuntimeState implements IRuntimeState, ISubsystem {
         throw new Error(`Unknown command type: ${cmd.type}`);
     }
   }
+
+  private restoreSnapshot(snapshot: StateSnapshot): void {
+    this._leases = new Map();
+    for (const [k, v] of Object.entries(snapshot.leases)) {
+      this._leases.set(k as UUID, { ...v, capabilities: [...v.capabilities] });
+    }
+    this._ledgers = new Map();
+    for (const [k, v] of Object.entries(snapshot.ledgers)) {
+      this._ledgers.set(k as UUID, {
+        planId: v.planId,
+        finalStatus: v.finalStatus,
+        entries: v.entries.map((e) => ({ ...e })),
+      });
+    }
+    this._activePlans = new Set(snapshot.activePlans as UUID[]);
+  }
+
+  private walDir(): string {
+    return path.join(this._persistenceDir!, 'wal');
+  }
+
+  private appendWalRecord(record: WalRecord): void {
+    const walFile = path.join(this.walDir(), 'current.wal');
+    const fd = fs.openSync(walFile, 'a');
+    try {
+      fs.writeSync(fd, JSON.stringify(record) + '\n');
+      if (this._fsync) {
+        fs.fsyncSync(fd);
+      }
+    } finally {
+      fs.closeSync(fd);
+    }
+  }
+
+  /**
+   * Write a snapshot of the current state and truncate the WAL. After a
+   * checkpoint, the WAL only needs to retain records written after the
+   * snapshot, bounding both disk usage and boot-replay cost (EX-5).
+   */
+  private writeCheckpoint(): void {
+    const walDir = this.walDir();
+    const snapshotPath = path.join(walDir, 'snapshot.json');
+    const snapshotFile = `${snapshotPath}.tmp`;
+    const payload = JSON.stringify({ version: this._version, timestamp: Date.now(), state: this.getSnapshot() });
+    const fd = fs.openSync(snapshotFile, 'w');
+    try {
+      fs.writeSync(fd, payload);
+      if (this._fsync) {
+        fs.fsyncSync(fd);
+      }
+    } finally {
+      fs.closeSync(fd);
+    }
+    // Atomic-ish rename, then truncate the WAL.
+    fs.renameSync(snapshotFile, snapshotPath);
+    const walFile = path.join(walDir, 'current.wal');
+    const wfd = fs.openSync(walFile, 'w');
+    fs.closeSync(wfd);
+    this._commandsSinceCheckpoint = 0;
+  }
+}
+
+/**
+ * Compute a 32-bit checksum over a command batch for WAL integrity (SRC-13).
+ * Uses a SHA-256 derived digest reduced to an unsigned 32-bit integer.
+ */
+export function computeCrc(commands: Command[]): number {
+  return (parseInt(createHash('sha256').update(JSON.stringify(commands)).digest('hex').slice(0, 8), 16) >>> 0);
 }
