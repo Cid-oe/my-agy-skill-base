@@ -10,6 +10,7 @@ import {
   PlanEdge,
   PlanNode,
   Predicate,
+  SemVer,
   SkillManifest,
   SubsystemHealth,
   UUID,
@@ -274,7 +275,8 @@ export class SkillResolver implements ISkillResolver {
   public async reresolve(
     plan: ExecutionPlan,
     failedNodeId: UUID,
-    _state: ResolverRuntimeState = {}
+    _state: ResolverRuntimeState = {},
+    registry?: ISkillRegistry
   ): Promise<ResolutionResult> {
     // Return immutable deep clone with substitution
     const targetNode = plan.nodes.find((n) => n.nodeId === failedNodeId);
@@ -297,6 +299,24 @@ export class SkillResolver implements ISkillResolver {
     }
 
     const nextSkillId = targetNode.fallbackChain[0];
+
+    // Validate the fallback skill exists and resolve its version before
+    // substituting (SRC-12). Without a registry the substitution is preserved
+    // for backwards compatibility but cannot be validated.
+    let nextVersion: string | undefined;
+    if (registry) {
+      const fallbackManifest = registry.getActiveVersion(nextSkillId);
+      if (!fallbackManifest) {
+        return {
+          status: 'unresolvable',
+          plan: null,
+          unresolvedSlots: [nextSkillId],
+          diagnostics: [`Fallback skill ${nextSkillId} is not registered`],
+        };
+      }
+      nextVersion = fallbackManifest.version;
+    }
+
     const newNodes: PlanNode[] = plan.nodes.map((n) => {
       if (n.nodeId === failedNodeId) {
         return {
@@ -304,6 +324,8 @@ export class SkillResolver implements ISkillResolver {
           skillRef: {
             ...n.skillRef,
             id: nextSkillId,
+            ...(nextVersion ? { version: nextVersion as SemVer } : {}),
+            registryRef: `registry://${nextSkillId}@${nextVersion ?? n.skillRef.version}`,
           },
           selectionReason: `Fallback escalation from failed execution`,
           fallbackChain: n.fallbackChain ? n.fallbackChain.slice(1) : [],

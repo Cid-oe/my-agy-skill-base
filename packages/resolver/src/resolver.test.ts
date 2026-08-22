@@ -280,3 +280,38 @@ test('SkillResolver reresolve produces a new immutable plan instance', async () 
   await resolver.shutdown();
   await registry.shutdown();
 });
+
+test('SkillResolver reresolve validates the fallback against the registry (SRC-12)', async () => {
+  const registry = new SkillRegistry();
+  await registry.boot();
+
+  const base: SkillManifest = { ...docSkill, id: 'base-skill-v', produces: ['BaseOutV'] };
+  const alt: SkillManifest = { ...docSkill, id: 'alt-skill-v', version: asSemVer('2.3.0'), produces: ['BaseOutV'] };
+  await registry.register(base);
+  await registry.register(alt);
+
+  const resolver = new SkillResolver();
+  await resolver.boot();
+
+  const res = await resolver.resolve(
+    { id: 'g', kind: 'subtask', description: 'd', requiredArtifacts: ['BaseOutV'] },
+    registry
+  );
+  const plan = res.plan!;
+  // Tamper the fallback chain to reference a non-existent skill.
+  plan.nodes[0].fallbackChain = ['does-not-exist'];
+
+  const bad = await resolver.reresolve(plan, plan.nodes[0].nodeId, {}, registry);
+  assert.strictEqual(bad.status, 'unresolvable');
+  assert.ok(bad.diagnostics.some((d) => d.includes('not registered')));
+
+  // A registered fallback substitutes with the correct version stamp.
+  plan.nodes[0].fallbackChain = ['alt-skill-v'];
+  const good = await resolver.reresolve(plan, plan.nodes[0].nodeId, {}, registry);
+  assert.strictEqual(good.status, 'resolved');
+  assert.strictEqual(good.plan!.nodes[0].skillRef.id, 'alt-skill-v');
+  assert.strictEqual(good.plan!.nodes[0].skillRef.version, asSemVer('2.3.0'));
+
+  await resolver.shutdown();
+  await registry.shutdown();
+});
