@@ -94,16 +94,24 @@ export class SkillLoader implements ISkillLoader {
       lifecycleState: 'loaded',
     };
 
+    // Resolve an executable module path. A skill with a resolvable modulePath
+    // is executed by the executor in an isolated worker (SRC-1/2/3). A skill
+    // without one is declarative and uses the in-process passthrough below.
+    const modulePath = manifest.modulePath;
+
     const loadedSkill: LoadedSkill = {
       manifest,
       handle,
       refCount: 1,
+      modulePath,
+      // Declarative passthrough for skills that ship no executable module.
+      // Module-backed skills bypass this via the executor's worker path.
       execute: async (ctx: Record<string, unknown>) => {
         return {
           skillId: manifest.id,
           executedAt: Date.now(),
-          output: `Execution output from ${manifest.name}`,
-          context: ctx,
+          declarative: true,
+          echoed: ctx,
         };
       },
       dispose: async () => {

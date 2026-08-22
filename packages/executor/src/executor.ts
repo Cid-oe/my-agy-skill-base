@@ -5,6 +5,8 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import * as path from 'node:path';
+import { Worker } from 'node:worker_threads';
 import {
   ArtifactEnvelope,
   ExecutionLimits,
@@ -20,6 +22,10 @@ import { ISkillLoader } from '@agy/registry';
 import { IArtifactStore } from '@agy/artifact';
 import { IPolicyEngine } from '@agy/policy';
 import { ExecutorOptions, IExecutor, PoolStatus } from './interfaces.js';
+
+// Resolve the worker harness asset relative to this compiled module
+// (packages/executor/dist/executor.js -> ../worker-harness.mjs).
+const WORKER_HARNESS_PATH = path.resolve(__dirname, '..', 'worker-harness.mjs');
 
 export class Executor implements IExecutor {
   public readonly name = 'executor';
@@ -142,38 +148,49 @@ export class Executor implements IExecutor {
             }
           }
         }
-        const executionPromise = skill.execute({
+        const ctxArg = {
           taskId: task.taskId,
           planId: task.planId,
           leaseId: task.lease.leaseId,
-        });
+        };
 
-        const timeoutPromise = new Promise<never>((_, reject) => {
-          timer = setTimeout(() => {
-            reject(
-              new AgyError(`Execution exceeded timeout of ${timeoutMs}ms`, {
-                code: 'EXECUTION_TIMEOUT',
-                subsystem: 'executor',
-                retryable: false,
-              })
-            );
-          }, timeoutMs);
+        let resultPayload: unknown;
+        if (skill.modulePath) {
+          // Isolated execution in a worker thread with memory resource limits
+          // and hard termination on timeout/cancellation (SRC-1, SRC-2, SRC-3,
+          // SRC-4). The worker is killed (not merely raced) on timeout, so no
+          // orphaned work survives.
+          resultPayload = await this.runInWorker(skill.modulePath, ctxArg, limits, task.cancellationToken);
+        } else {
+          const executionPromise = skill.execute(ctxArg);
 
-          task.cancellationToken.onCancelled(() => {
-            if (timer) clearTimeout(timer);
-            reject(
-              new AgyError(`Execution cancelled by token`, {
-                code: 'TASK_CANCELLED',
-                subsystem: 'executor',
-                retryable: false,
-              })
-            );
+          const timeoutPromise = new Promise<never>((_, reject) => {
+            timer = setTimeout(() => {
+              reject(
+                new AgyError(`Execution exceeded timeout of ${timeoutMs}ms`, {
+                  code: 'EXECUTION_TIMEOUT',
+                  subsystem: 'executor',
+                  retryable: false,
+                })
+              );
+            }, timeoutMs);
+
+            task.cancellationToken.onCancelled(() => {
+              if (timer) clearTimeout(timer);
+              reject(
+                new AgyError(`Execution cancelled by token`, {
+                  code: 'TASK_CANCELLED',
+                  subsystem: 'executor',
+                  retryable: false,
+                })
+              );
+            });
           });
-        });
 
-        const resultPayload = await Promise.race([executionPromise, timeoutPromise]);
-        if (timer) {
-          clearTimeout(timer);
+          resultPayload = await Promise.race([executionPromise, timeoutPromise]);
+          if (timer) {
+            clearTimeout(timer);
+          }
         }
 
         const outputArtifacts: ArtifactEnvelope[] = [];
@@ -229,6 +246,99 @@ export class Executor implements IExecutor {
       }
       this.releaseWorker();
     }
+  }
+
+  /**
+   * Run a skill module in an isolated worker thread with resource limits and
+   * hard termination on timeout/cancellation (SRC-1, SRC-2, SRC-3, SRC-4).
+   *
+   * maxMemoryMb is enforced via the worker's maxOldGenerationSizeMb limit.
+   * maxCpuPercent is not natively enforceable by Node worker_threads and is
+   * mitigated by the hard timeout (documented limitation).
+   */
+  private runInWorker(
+    modulePath: string,
+    context: Record<string, unknown>,
+    limits: ExecutionLimits,
+    cancellationToken: { isCancellationRequested: boolean; onCancelled(cb: () => void): void }
+  ): Promise<unknown> {
+    return new Promise<unknown>((resolve, reject) => {
+      const timeoutMs = limits.maxDurationMs || 30000;
+      const resourceLimits: Record<string, number> = {};
+      if (typeof limits.maxMemoryMb === 'number') {
+        resourceLimits.maxOldGenerationSizeMb = limits.maxMemoryMb;
+      }
+
+      let worker: Worker;
+      try {
+        worker = new Worker(WORKER_HARNESS_PATH, {
+          resourceLimits,
+          workerData: { modulePath, context },
+        });
+      } catch (err) {
+        reject(err);
+        return;
+      }
+
+      let settled = false;
+      let timer: NodeJS.Timeout | undefined;
+      const settle = (action: () => void): void => {
+        if (settled) return;
+        settled = true;
+        if (timer) clearTimeout(timer);
+        action();
+      };
+
+      timer = setTimeout(() => {
+        worker.terminate().catch(() => undefined).finally(() => {
+          settle(() =>
+            reject(new AgyError(`Execution exceeded timeout of ${timeoutMs}ms`, {
+              code: 'EXECUTION_TIMEOUT',
+              subsystem: 'executor',
+              retryable: false,
+            }))
+          );
+        });
+      }, timeoutMs);
+
+      cancellationToken.onCancelled(() => {
+        worker.terminate().catch(() => undefined).finally(() => {
+          settle(() =>
+            reject(new AgyError('Execution cancelled by token', {
+              code: 'TASK_CANCELLED',
+              subsystem: 'executor',
+              retryable: false,
+            }))
+          );
+        });
+      });
+
+      worker.on('message', (msg: { ok: boolean; result?: unknown; error?: string }) => {
+        settle(() => {
+          if (msg && msg.ok) {
+            resolve(msg.result);
+          } else {
+            reject(new AgyError(`Skill execution failed: ${msg?.error ?? 'unknown error'}`, {
+              code: 'EXECUTION_FAILED',
+              subsystem: 'executor',
+              retryable: false,
+            }));
+          }
+        });
+      });
+
+      worker.on('error', (err: Error) => {
+        settle(() => {
+          const message = err && err.message ? err.message : String(err);
+          reject(new AgyError(`Worker error: ${message}`, {
+            code: 'EXECUTION_FAILED',
+            subsystem: 'executor',
+            retryable: false,
+            details: { raw: message },
+          }));
+        });
+      });
+    });
   }
 
   private async acquireWorker(): Promise<void> {

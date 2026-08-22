@@ -75,6 +75,13 @@ export interface SkillManifest {
   checksum?: Hash;
   signature?: string | null;
   metadata?: Record<string, unknown>;
+  /**
+   * Absolute path to the skill's executable module (ESM .mjs or CJS). When
+   * present, the executor runs the skill's exported `execute(ctx)` inside an
+   * isolated worker thread (SRC-1/2/3). When absent, the skill is treated as
+   * declarative and runs an in-process passthrough handler.
+   */
+  modulePath?: string;
 }
 
 export interface SkillHandle {
