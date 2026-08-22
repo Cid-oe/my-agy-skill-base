@@ -13,3 +13,19 @@ ecosystem, and the RFCs that define their contracts.
 
 Start with [RFC-0000](docs/RFC-0000-System-Overview.md), the documentation
 entry point for system-level and subsystem RFC material.
+
+## Development
+
+Build artifacts (`dist/`), dependency installs (`node_modules/`), and TypeScript
+incremental build state (`*.tsbuildinfo`) are **not** committed; they are ignored
+via `.gitignore` and produced locally.
+
+```sh
+npm install        # install deps and link workspace packages
+npm run build      # tsc -b (required before running tests)
+npm test           # builds (via `pretest`) then runs every *.test.js suite
+npm run typecheck  # tsc -b --noEmit
+```
+
+`npm test` always builds first, so it works from a clean checkout once
+dependencies are installed.

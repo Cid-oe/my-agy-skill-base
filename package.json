@@ -9,6 +9,7 @@
   ],
   "scripts": {
     "build": "tsc -b",
+    "pretest": "npm run build",
     "test": "node scripts/run-tests.mjs",
     "typecheck": "tsc -b --noEmit",
     "clean": "tsc -b --clean"
