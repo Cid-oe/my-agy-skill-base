@@ -8,9 +8,12 @@ import { randomUUID } from 'node:crypto';
 import { SkillHandle, SkillManifest, SubsystemHealth, AgyError, UUID, asUUID } from '@agy/shared';
 import { IEventBus } from '@agy/event-bus';
 import { ISkillRegistry, QuarantineRecord } from './interfaces.js';
+import { validateManifest } from './manifest-validator.js';
 
 export interface SkillRegistryOptions {
   eventBus?: IEventBus;
+  /** Optional override path to the manifest JSON schema (defaults to <cwd>/schemas/skill-manifest.json). */
+  schemaPath?: string;
 }
 
 export class SkillRegistry implements ISkillRegistry {
@@ -30,9 +33,11 @@ export class SkillRegistry implements ISkillRegistry {
   private _isReady = false;
   private _bootTime = 0;
   private _eventBus?: IEventBus;
+  private _schemaPath?: string;
 
   constructor(options: SkillRegistryOptions = {}) {
     this._eventBus = options.eventBus;
+    this._schemaPath = options.schemaPath;
   }
 
   public async boot(): Promise<void> {
@@ -60,18 +65,26 @@ export class SkillRegistry implements ISkillRegistry {
       });
     }
 
-    // Validate minimal requirements
-    if (!manifest.id || !manifest.version || !manifest.name) {
+    // Validate against the canonical manifest schema (SRC-16).
+    const issues = validateManifest(manifest, this._schemaPath);
+    const missingIdentity = !manifest.id || !manifest.version || !manifest.name;
+    if (missingIdentity || issues.length > 0) {
+      const errors = missingIdentity
+        ? ['id, version, and name are required']
+        : issues.map((i) => `${i.path}: ${i.message}`);
       this._quarantine.push({
         path: sourceRoot,
-        reason: 'Malformed manifest: Missing required identity fields',
-        errors: ['id, version, and name are required'],
+        reason: missingIdentity
+          ? 'Malformed manifest: Missing required identity fields'
+          : 'Manifest failed schema validation',
+        errors,
         timestamp: Date.now(),
       });
       throw new AgyError(`Invalid manifest for ${manifest.id || 'unknown'}`, {
         code: 'MANIFEST_INVALID',
         subsystem: 'registry',
         retryable: false,
+        details: { errors },
       });
     }
 

@@ -147,9 +147,9 @@ test('SkillResolver backtracks to alternate candidates upon exclusivity conflict
   await registry.boot();
 
   // Primary candidates conflict with each other
-  const candA1: SkillManifest = { ...docSkill, id: 'cand-A1', priority: 'high', produces: ['Out-A'], exclusiveWith: ['cand-B1'] };
-  const candA2: SkillManifest = { ...docSkill, id: 'cand-A2', priority: 'medium', produces: ['Out-A'] };
-  const candB1: SkillManifest = { ...docSkill, id: 'cand-B1', priority: 'high', produces: ['Out-B'], exclusiveWith: ['cand-A1'] };
+  const candA1: SkillManifest = { ...docSkill, id: 'cand-a1', priority: 'high', produces: ['Out-A'], exclusiveWith: ['cand-b1'] };
+  const candA2: SkillManifest = { ...docSkill, id: 'cand-a2', priority: 'medium', produces: ['Out-A'] };
+  const candB1: SkillManifest = { ...docSkill, id: 'cand-b1', priority: 'high', produces: ['Out-B'], exclusiveWith: ['cand-a1'] };
 
   await registry.register(candA1);
   await registry.register(candA2);
@@ -168,10 +168,10 @@ test('SkillResolver backtracks to alternate candidates upon exclusivity conflict
   const res = await resolver.resolve(goal, registry);
   assert.strictEqual(res.status, 'resolved');
   assert.strictEqual(res.plan?.nodes.length, 2);
-  // cand-A2 should have been chosen to avoid exclusivity with cand-B1
+  // cand-a2 should have been chosen to avoid exclusivity with cand-b1
   const nodeIds = res.plan?.nodes.map((n) => n.skillRef.id);
-  assert.strictEqual(nodeIds?.includes('cand-A2'), true);
-  assert.strictEqual(nodeIds?.includes('cand-B1'), true);
+  assert.strictEqual(nodeIds?.includes('cand-a2'), true);
+  assert.strictEqual(nodeIds?.includes('cand-b1'), true);
 
   await resolver.shutdown();
   await registry.shutdown();
@@ -181,8 +181,8 @@ test('SkillResolver detects cycles in dependency graph and rejects plan', async 
   const registry = new SkillRegistry();
   await registry.boot();
 
-  const cycA: SkillManifest = { ...docSkill, id: 'cycle-A', produces: ['CycOut'], requires: ['cycle-B'] };
-  const cycB: SkillManifest = { ...docSkill, id: 'cycle-B', produces: ['CycInternal'], requires: ['cycle-A'] };
+  const cycA: SkillManifest = { ...docSkill, id: 'cycle-a', produces: ['CycOut'], requires: ['cycle-b'] };
+  const cycB: SkillManifest = { ...docSkill, id: 'cycle-b', produces: ['CycInternal'], requires: ['cycle-a'] };
 
   await registry.register(cycA);
   await registry.register(cycB);

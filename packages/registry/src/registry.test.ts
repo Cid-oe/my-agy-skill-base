@@ -110,6 +110,53 @@ test('SkillLoader acquires, releases, and drains instances properly during reloa
   await registry.shutdown();
 });
 
+test('SkillRegistry enforces manifest schema validation on register (SRC-16)', async () => {
+  const registry = new SkillRegistry();
+  await registry.boot();
+
+  // Invalid SemVer version
+  await assert.rejects(
+    async () => {
+      await registry.register({ ...sampleManifest, id: 'bad-version-skill', version: 'not-a-version' as any });
+    },
+    (err: any) => err.code === 'MANIFEST_INVALID'
+  );
+
+  // Invalid priority enum
+  await assert.rejects(
+    async () => {
+      await registry.register({ ...sampleManifest, id: 'bad-priority-skill', priority: 'urgent' as any });
+    },
+    (err: any) => err.code === 'MANIFEST_INVALID'
+  );
+
+  // confidenceThreshold out of [0,1] range
+  await assert.rejects(
+    async () => {
+      await registry.register({ ...sampleManifest, id: 'bad-threshold-skill', confidenceThreshold: 5 });
+    },
+    (err: any) => err.code === 'MANIFEST_INVALID'
+  );
+
+  // id violates the lowercase pattern
+  await assert.rejects(
+    async () => {
+      await registry.register({ ...sampleManifest, id: 'UPPERCASE-ID' });
+    },
+    (err: any) => err.code === 'MANIFEST_INVALID'
+  );
+
+  const quarantined = registry.getQuarantined();
+  assert.strictEqual(quarantined.length, 4, 'all four invalid manifests should be quarantined');
+  // Each quarantine record should carry schema validation error details
+  for (const record of quarantined) {
+    assert.ok(record.errors.length > 0, 'quarantine record should include error details');
+    assert.strictEqual(record.reason, 'Manifest failed schema validation');
+  }
+
+  await registry.shutdown();
+});
+
 test('SkillRegistry scans directory roots for manifests', async () => {
   const os = await import('node:os');
   const path = await import('node:path');
