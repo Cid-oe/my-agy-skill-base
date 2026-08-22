@@ -161,6 +161,26 @@ test('EventBus cleans up per-key queues on drain and avoids memory leaks', async
   await bus.shutdown();
 });
 
+test('EventBus exposes processing/error counters via getStats (SRC-22)', async () => {
+  const bus = new EventBus({ backoffBaseMs: 1, maxRetries: 1 });
+  await bus.boot();
+
+  bus.subscribe('ok.topic', () => { /* success */ });
+  bus.subscribe('bad.topic', () => {
+    throw new Error('boom');
+  });
+
+  await bus.publish('ok.topic', { id: asUUID('ok-1'), topic: 'ok.topic', key: 'k', payload: {}, timestamp: 0 });
+  await bus.publish('bad.topic', { id: asUUID('bad-1'), topic: 'bad.topic', key: 'k', payload: {}, timestamp: 0 });
+
+  const stats = bus.getStats();
+  assert.ok(stats.processedCount >= 1, 'processedCount should reflect successful deliveries');
+  assert.ok(stats.errorCount >= 1, 'errorCount should reflect failed deliveries');
+  assert.ok(stats.deadLetterCount >= 1, 'failed event should be dead-lettered');
+
+  await bus.shutdown();
+});
+
 test('EventBus shutdown terminates even under a self-sustaining producer (EX-6)', async () => {
   const bus = new EventBus({ shutdownDrainMs: 300 });
   await bus.boot();

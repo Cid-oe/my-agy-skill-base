@@ -6,7 +6,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { Event, EventHandler, Subscription, SubsystemHealth, AgyError, UUID, asUUID } from '@agy/shared';
-import { EventBusOptions, IEventBus } from './interfaces.js';
+import { EventBusOptions, EventBusStats, IEventBus } from './interfaces.js';
 
 interface TopicSubscription<T = unknown> {
   id: UUID;
@@ -101,6 +101,15 @@ export class EventBus implements IEventBus {
 
   public clearDeadLetters(): void {
     this._deadLetterQueue = [];
+  }
+
+  public getStats(): EventBusStats {
+    return {
+      processedCount: this._processedCount,
+      errorCount: this._errorCount,
+      deadLetterCount: this._deadLetterQueue.length,
+      activeKeyQueues: this._keyQueues.size,
+    };
   }
 
   public subscribe<T = unknown>(topic: string, handler: EventHandler<T>): Subscription {
