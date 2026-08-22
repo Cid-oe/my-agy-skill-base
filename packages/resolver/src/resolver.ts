@@ -221,41 +221,84 @@ export class SkillResolver implements ISkillResolver {
     return null;
   }
 
+  /**
+   * Detect cycles in the resolved skill dependency graph using Tarjan's
+   * strongly-connected-components algorithm (SRC-10). Returns a node-id path
+   * describing the first cyclic SCC, or null if the graph is acyclic.
+   */
   private detectCycle(skills: SkillManifest[]): string[] | null {
     const adj = new Map<string, string[]>();
+    const nodes = new Set<string>();
     for (const s of skills) {
-      adj.set(s.id, s.requires ? [...s.requires] : []);
+      nodes.add(s.id);
+      const deps = (s.requires ? [...s.requires] : []).filter((r) => skills.some((x) => x.id === r));
+      adj.set(s.id, deps);
     }
 
-    const visited = new Set<string>();
-    const recStack = new Set<string>();
-    const path: string[] = [];
+    let index = 0;
+    const stack: string[] = [];
+    const onStack = new Set<string>();
+    const indices = new Map<string, number>();
+    const lowlinks = new Map<string, number>();
+    let cyclic: string[] | null = null;
 
-    const dfs = (node: string): boolean => {
-      visited.add(node);
-      recStack.add(node);
-      path.push(node);
+    const strongConnect = (v: string): void => {
+      indices.set(v, index);
+      lowlinks.set(v, index);
+      index++;
+      stack.push(v);
+      onStack.add(v);
 
-      const neighbors = adj.get(node) || [];
-      for (const neighbor of neighbors) {
-        if (!visited.has(neighbor)) {
-          if (dfs(neighbor)) return true;
-        } else if (recStack.has(neighbor)) {
-          path.push(neighbor);
-          return true;
+      for (const w of adj.get(v) ?? []) {
+        if (!indices.has(w)) {
+          strongConnect(w);
+          lowlinks.set(v, Math.min(lowlinks.get(v)!, lowlinks.get(w)!));
+        } else if (onStack.has(w)) {
+          lowlinks.set(v, Math.min(lowlinks.get(v)!, indices.get(w)!));
         }
       }
 
-      path.pop();
-      recStack.delete(node);
-      return false;
+      if (lowlinks.get(v) === indices.get(v)) {
+        // Root of an SCC: pop until v.
+        const component: string[] = [];
+        let w: string;
+        do {
+          w = stack.pop()!;
+          onStack.delete(w);
+          component.push(w);
+        } while (w !== v);
+
+        const selfLoop = component.length === 1 && (adj.get(component[0]) ?? []).includes(component[0]);
+        if (component.length > 1 || selfLoop) {
+          cyclic = reconstructCycle(component, adj);
+        }
+      }
     };
 
-    for (const s of skills) {
-      if (!visited.has(s.id)) {
-        if (dfs(s.id)) {
-          return path;
-        }
+    // Reconstruct an explicit cycle path within a cyclic SCC.
+    const reconstructCycle = (component: string[], adjacency: Map<string, string[]>): string[] => {
+      const inComp = new Set(component);
+      const start = component[0];
+      const path: string[] = [start];
+      const seen = new Set<string>([start]);
+      let current = start;
+      // Walk edges that stay inside the component until we return to start.
+      for (let i = 0; i < component.length; i++) {
+        const next = (adjacency.get(current) ?? []).find((n) => inComp.has(n));
+        if (!next) break;
+        path.push(next);
+        if (next === start) break;
+        if (seen.has(next)) break;
+        seen.add(next);
+        current = next;
+      }
+      return path;
+    };
+
+    for (const n of nodes) {
+      if (!indices.has(n)) {
+        strongConnect(n);
+        if (cyclic) return cyclic;
       }
     }
 
