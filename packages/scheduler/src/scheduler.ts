@@ -330,7 +330,9 @@ export class Scheduler implements IScheduler {
         continue;
       }
 
-      const incoming = plan.edges.filter((e: PlanEdge) => e.toNodeId === node.nodeId && e.kind === 'ordering');
+      const incoming = plan.edges.filter(
+        (e: PlanEdge) => e.toNodeId === node.nodeId && (e.kind === 'ordering' || e.kind === 'data')
+      );
       const satisfied = incoming.every((e: PlanEdge) => completed.has(e.fromNodeId));
 
       if (satisfied) {

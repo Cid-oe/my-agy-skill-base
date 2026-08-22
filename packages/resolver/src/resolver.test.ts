@@ -205,6 +205,48 @@ test('SkillResolver detects cycles in dependency graph and rejects plan', async 
   await registry.shutdown();
 });
 
+test('SkillResolver emits data edges for consumed artifacts (SRC-11)', async () => {
+  const registry = new SkillRegistry();
+  await registry.boot();
+
+  const producer: SkillManifest = { ...docSkill, id: 'data-producer', produces: ['SharedArt'] };
+  // Consumer depends on SharedArt via `consumes` (NOT via `requires`).
+  const consumer: SkillManifest = {
+    ...docSkill,
+    id: 'data-consumer',
+    consumes: ['SharedArt'],
+    produces: ['FinalArt'],
+    requires: [],
+  };
+
+  await registry.register(producer);
+  await registry.register(consumer);
+
+  const resolver = new SkillResolver();
+  await resolver.boot();
+
+  const res = await resolver.resolve(
+    { id: 'g-data', kind: 'subtask', description: 'data dependency', requiredArtifacts: ['FinalArt'] },
+    registry
+  );
+
+  assert.strictEqual(res.status, 'resolved');
+  const nodeIds = new Set(res.plan!.nodes.map((n) => n.skillRef.id));
+  assert.strictEqual(nodeIds.has('data-producer'), true);
+  assert.strictEqual(nodeIds.has('data-consumer'), true);
+
+  // A data edge from producer -> consumer must exist.
+  const producerNode = res.plan!.nodes.find((n) => n.skillRef.id === 'data-producer')!;
+  const consumerNode = res.plan!.nodes.find((n) => n.skillRef.id === 'data-consumer')!;
+  const hasDataEdge = res.plan!.edges.some(
+    (e) => e.fromNodeId === producerNode.nodeId && e.toNodeId === consumerNode.nodeId && e.kind === 'data'
+  );
+  assert.strictEqual(hasDataEdge, true, 'expected a data edge from producer to consumer');
+
+  await resolver.shutdown();
+  await registry.shutdown();
+});
+
 test('SkillResolver reresolve produces a new immutable plan instance', async () => {
   const registry = new SkillRegistry();
   await registry.boot();

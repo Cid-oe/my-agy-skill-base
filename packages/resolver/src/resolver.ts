@@ -424,13 +424,35 @@ export class SkillResolver implements ISkillResolver {
     });
 
     const edges: PlanEdge[] = [];
+
+    // Index which skill (in this plan) produces each artifact, so consumed
+    // artifacts can be wired as data dependencies (SRC-11).
+    const producesIndex = new Map<string, string>();
     for (const s of skills) {
+      for (const produced of s.produces ?? []) {
+        producesIndex.set(produced, s.id);
+      }
+    }
+
+    for (const s of skills) {
+      // ordering edges from declared skill requirements
       if (s.requires) {
         for (const req of s.requires) {
           const fromId = skillToNodeId.get(req);
           const toId = skillToNodeId.get(s.id);
           if (fromId && toId) {
             edges.push({ fromNodeId: fromId, toNodeId: toId, kind: 'ordering' });
+          }
+        }
+      }
+      // data edges from consumed artifacts produced by another plan skill
+      for (const consumed of s.consumes ?? []) {
+        const producerSkillId = producesIndex.get(consumed);
+        if (producerSkillId && producerSkillId !== s.id) {
+          const fromId = skillToNodeId.get(producerSkillId);
+          const toId = skillToNodeId.get(s.id);
+          if (fromId && toId) {
+            edges.push({ fromNodeId: fromId, toNodeId: toId, kind: 'data' });
           }
         }
       }
