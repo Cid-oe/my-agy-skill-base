@@ -2,6 +2,7 @@ node_modules/
 dist/
 *.tsbuildinfo
 .system_generated/
+.agy/
 *.log
 .DS_Store
 Thumbs.db
