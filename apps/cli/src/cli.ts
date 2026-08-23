@@ -93,6 +93,19 @@ export async function createCliRuntime(options: CliRuntimeOptions = {}): Promise
 
   await kernel.boot();
 
+  const skillPaths = new Map<string, string>();
+  try {
+    const configPath = path.join(process.cwd(), 'agy.config.json');
+    if (fs.existsSync(configPath)) {
+      const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      if (Array.isArray(config.skillRoots)) {
+        await registry.scan(config.skillRoots);
+      }
+    }
+  } catch (err) {
+    // ignore
+  }
+
   return {
     kernel,
     bus,
@@ -105,7 +118,7 @@ export async function createCliRuntime(options: CliRuntimeOptions = {}): Promise
     scheduler,
     executor,
     reflection,
-    skillPaths: new Map(),
+    skillPaths,
   };
 }
 
