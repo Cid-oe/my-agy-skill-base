@@ -1,38 +1,56 @@
-// Worker harness for the Sandboxed Executor (SRC-1, SRC-2, SRC-3).
-//
-// Runs in a worker thread isolated from the main kernel process. Dynamically
-// imports the skill module at `modulePath` and invokes its exported
-// `execute(context)` function, posting the result (or error) back to the
-// parent. This file is a static runtime asset resolved relative to the
-// compiled executor (packages/executor/dist -> ../worker-harness.mjs).
-import { isMainThread, parentPort, workerData } from 'node:worker_threads';
+// Child-process execution harness. Results travel over a private IPC callback;
+// the callback is hidden from the skill before its module is imported.
 
-async function run() {
-  if (isMainThread || !parentPort || !workerData) {
-    return;
-  }
-  const { modulePath, context } = workerData;
+let sendToParent;
+let finished = false;
+
+function sendResult(value, exitCode = 0) {
   try {
-    const mod = await import(modulePath);
-    const execute = typeof mod.execute === 'function'
-      ? mod.execute
-      : typeof mod.default === 'function'
-        ? mod.default
-        : mod.default && typeof mod.default.execute === 'function'
-          ? mod.default.execute
-          : undefined;
-
-    if (typeof execute !== 'function') {
-      throw new Error(`Skill module ${modulePath} does not export an execute(context) function`);
-    }
-
-    const result = await execute(context);
-    parentPort.postMessage({ ok: true, result });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    const stack = err instanceof Error ? err.stack : undefined;
-    parentPort.postMessage({ ok: false, error: message, stack });
+    sendToParent?.(value, () => process.exit(exitCode));
+  } catch {
+    process.exit(exitCode);
   }
 }
 
-run();
+function hideControlChannel() {
+  sendToParent = process.send?.bind(process);
+  try { Object.defineProperty(process, 'send', { value: undefined, configurable: false, writable: false }); } catch { /* best effort */ }
+  try { Object.defineProperty(process, 'channel', { value: undefined, configurable: false, writable: false }); } catch { /* best effort */ }
+}
+
+async function execute(input) {
+  const { modulePath, functionSource, context, manifest } = input;
+  let handler;
+  if (modulePath) {
+    const mod = await import(modulePath);
+    handler = typeof mod.execute === 'function' ? mod.execute
+      : typeof mod.default === 'function' ? mod.default
+        : mod.default && typeof mod.default.execute === 'function' ? mod.default.execute : undefined;
+  } else if (functionSource) {
+    const factory = Function('manifest', `return (${functionSource});`);
+    handler = factory(manifest);
+  }
+  if (typeof handler !== 'function') throw new Error('Skill does not export execute(context)');
+  return handler(context);
+}
+
+process.on('message', async (input) => {
+  if (finished) return;
+  finished = true;
+  hideControlChannel();
+  try {
+    const result = await execute(input);
+    sendResult({ ok: true, result });
+  } catch (err) {
+    sendResult({ ok: false, error: err instanceof Error ? err.message : String(err), stack: err?.stack }, 1);
+  }
+});
+
+process.on('uncaughtException', (err) => {
+  if (!finished) sendResult({ ok: false, error: err.message, stack: err.stack }, 1);
+  else process.exit(1);
+});
+process.on('unhandledRejection', (err) => {
+  if (!finished) sendResult({ ok: false, error: String(err) }, 1);
+  else process.exit(1);
+});

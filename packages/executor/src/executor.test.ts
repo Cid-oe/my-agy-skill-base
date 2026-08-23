@@ -191,6 +191,11 @@ test('Executor enforces policy lease coverage of required capabilities (SRC-5, S
   await state.boot();
   const policy = new PolicyEngine({ runtimeState: state });
   await policy.boot();
+  policy.registerPolicy({
+    name: 'TestAllow',
+    priority: 100,
+    evaluate: (req) => ({ ...req, decision: 'allow', reason: 'test permit', policyVersion: '1.0.0' }),
+  });
 
   const permSkill: SkillManifest = {
     ...sampleSkill,

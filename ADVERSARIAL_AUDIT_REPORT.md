@@ -12,6 +12,14 @@ The highest-risk issue is that worker-thread execution is described as a sandbox
 
 This report separates **confirmed runtime failures** from **code-review risks**. It does not claim that a finite audit can prove the absence of every possible defect.
 
+## Remediation update
+
+The P0/P1 findings were addressed in the follow-up implementation pass. The remediation includes restricted child-process execution with Node permission flags, policy-authorized lease issuance and identity validation, safe artifact hashes and stream verification, atomic runtime rollback/recovery, scheduler plan validation, resolver dependency validation, immutable registry boundaries, and lifecycle cleanup. A new adversarial regression suite now protects the repaired behavior.
+
+The execution boundary is now substantially stronger, but it is still not equivalent to a container/VM: network isolation and OS-level resource policy require an external sandbox runtime. The executor explicitly rejects the unsupported `maxCpuPercent` limit rather than silently ignoring it.
+
+The findings below document the pre-remediation failures and remain useful as regression criteria. They should be read together with the remediation update, not as a statement that every listed behavior is still present.
+
 ## Validation performed
 
 | Check | Result |
@@ -19,7 +27,7 @@ This report separates **confirmed runtime failures** from **code-review risks**.
 | `npm ci` | Passed; 17 packages installed |
 | `npm run build` | Passed |
 | `npm run typecheck` | Passed |
-| `npm test` | Passed: 20/20 compiled test suites |
+| `npm test` | Passed: 21/21 compiled test suites |
 | `npm audit --audit-level=low` | Passed: 0 vulnerabilities |
 | Adversarial runtime probes | 20+ distinct failures reproduced |
 

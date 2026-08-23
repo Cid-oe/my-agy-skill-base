@@ -20,6 +20,7 @@ export interface AgyErrorDetails {
   subsystem: SubsystemName;
   retryable: boolean;
   details?: Record<string, unknown>;
+  cause?: unknown;
 }
 
 export class AgyError extends Error {
@@ -29,7 +30,7 @@ export class AgyError extends Error {
   public readonly details?: Record<string, unknown>;
 
   constructor(message: string, options: AgyErrorDetails) {
-    super(`[${options.subsystem.toUpperCase()}:${options.code}] ${message}`);
+    super(`[${options.subsystem.toUpperCase()}:${options.code}] ${message}`, { cause: options.cause });
     this.name = 'AgyError';
     this.code = options.code;
     this.subsystem = options.subsystem;

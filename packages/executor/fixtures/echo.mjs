@@ -1,4 +1,4 @@
-// Test fixture skill executed inside an isolated worker (SRC-2, SRC-3).
+// Test fixture skill executed inside a restricted child process (SRC-2, SRC-3).
 // Exports a real execute(context) that performs actual computation.
 export async function execute(context) {
   const { taskId } = context ?? {};

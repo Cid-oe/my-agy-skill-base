@@ -32,7 +32,7 @@ test('End-to-End Multi-Subsystem Kernel Dataflow Integration', async () => {
   const loader = new SkillLoader({ registry, eventBus: bus });
   const executor = new Executor({ skillLoader: loader, artifactStore, policyEngine, eventBus: bus });
   const resolver = new SkillResolver();
-  const scheduler = new Scheduler({ eventBus: bus, runtimeState });
+  const scheduler = new Scheduler({ eventBus: bus, runtimeState, policyEngine });
 
   // Connect scheduler to executor
   scheduler.registerDispatcher(async (task: TaskContext, node: PlanNode) => {

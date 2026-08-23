@@ -14,6 +14,26 @@ export const asHash = (s: string): Hash => s as Hash;
 export const asSemVer = (s: string): SemVer => s as SemVer;
 export type Timestamp = number;
 
+/**
+ * Clone the plain data structures that cross subsystem boundaries. Runtime
+ * state, manifests, envelopes, and execution contexts are deliberately plain
+ * JSON-compatible data, so returning a clone prevents callers from mutating
+ * live kernel state through a supposedly read-only object.
+ */
+export function deepClone<T>(value: T): T {
+  if (value === null || typeof value !== 'object') return value;
+  if (Buffer.isBuffer(value)) return Buffer.from(value) as T;
+  if (value instanceof Date) return new Date(value.getTime()) as T;
+  if (Array.isArray(value)) return value.map((item) => deepClone(item)) as T;
+  const result: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+    Object.defineProperty(result, key, {
+      value: deepClone(item), enumerable: true, writable: true, configurable: true,
+    });
+  }
+  return result as T;
+}
+
 export type SkillLifecycleState =
   | 'unloaded'
   | 'loading'
@@ -77,9 +97,9 @@ export interface SkillManifest {
   metadata?: Record<string, unknown>;
   /**
    * Absolute path to the skill's executable module (ESM .mjs or CJS). When
-   * present, the executor runs the skill's exported `execute(ctx)` inside an
-   * isolated worker thread (SRC-1/2/3). When absent, the skill is treated as
-   * declarative and runs an in-process passthrough handler.
+   * present, the executor runs the skill's exported `execute(ctx)` inside a
+   * short-lived restricted child process (SRC-1/2/3). When absent, the skill is
+   * declarative and its trusted adapter is serialized into that process.
    */
   modulePath?: string;
 }
@@ -202,7 +222,7 @@ export interface TransactionResult {
 
 export interface ICancellationToken {
   isCancellationRequested: boolean;
-  onCancelled(callback: () => void): void;
+  onCancelled(callback: () => void): void | (() => void);
 }
 
 export interface TaskContext {

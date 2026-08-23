@@ -1,5 +1,7 @@
 # AGY Kernel — Production Remediation Roadmap
 
+> **Status note (2026-08-23):** The core remediation phases are implemented and covered by 21 passing suites. External container/VM isolation, signed distribution, and cross-process crash testing remain next priorities.
+
 > **Standard:** Strict Dependency-Ordered Execution. No subsystem or feature may be implemented ahead of its underlying dependencies. Every phase requires concrete API signatures, test suites, migration steps, and pass/fail exit criteria before code changes commence.
 
 ---

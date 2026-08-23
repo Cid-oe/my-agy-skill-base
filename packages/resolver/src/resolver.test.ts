@@ -268,7 +268,7 @@ test('SkillResolver reresolve produces a new immutable plan instance', async () 
   const originalPlan = res.plan!;
   const failedNodeId = originalPlan.nodes[0].nodeId;
 
-  const reresolveRes = await resolver.reresolve(originalPlan, failedNodeId);
+  const reresolveRes = await resolver.reresolve(originalPlan, failedNodeId, {}, registry);
   assert.strictEqual(reresolveRes.status, 'resolved');
   assert.notStrictEqual(reresolveRes.plan, originalPlan);
   assert.notStrictEqual(reresolveRes.plan?.planId, originalPlan.planId);

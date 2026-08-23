@@ -36,7 +36,8 @@ export class SkillLoader implements ISkillLoader {
   constructor(options: SkillLoaderOptions) {
     this._registry = options.registry;
     this._eventBus = options.eventBus;
-    if (options.drainTimeoutMs) {
+    if (options.drainTimeoutMs !== undefined) {
+      if (!Number.isFinite(options.drainTimeoutMs) || options.drainTimeoutMs <= 0) throw new RangeError('drainTimeoutMs must be a positive finite number');
       this.drainTimeoutMs = options.drainTimeoutMs;
     }
   }
@@ -82,6 +83,11 @@ export class SkillLoader implements ISkillLoader {
 
     if (this._loadedSkills.has(id)) {
       const existing = this._loadedSkills.get(id)!;
+      if (version && existing.manifest.version !== version) {
+        throw new AgyError(`Skill ${id} version ${version} conflicts with loaded version ${existing.manifest.version}`, {
+          code: 'SKILL_VERSION_CONFLICT', subsystem: 'registry', retryable: false,
+        });
+      }
       existing.refCount++;
       return existing;
     }
@@ -103,8 +109,8 @@ export class SkillLoader implements ISkillLoader {
     };
 
     // Resolve an executable module path. A skill with a resolvable modulePath
-    // is executed by the executor in an isolated worker (SRC-1/2/3). A skill
-    // without one is declarative and uses the in-process passthrough below.
+    // is executed by the executor in a restricted child process (SRC-1/2/3).
+    // A skill without one is declarative and uses the serialized adapter below.
     const modulePath = manifest.modulePath;
 
     const loadedSkill: LoadedSkill = {

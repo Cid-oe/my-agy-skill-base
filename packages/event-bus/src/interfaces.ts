@@ -12,6 +12,7 @@ export interface EventBusOptions {
   backoffBaseMs?: number;        // Defaults to 50ms
   maxDeadLetters?: number;       // Defaults to 500
   shutdownDrainMs?: number;      // Defaults to 5000ms; bounds shutdown drain
+  persistenceDir?: string;       // Optional durable dead-letter queue location
 }
 
 export interface EventBusStats {

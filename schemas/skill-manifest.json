@@ -146,6 +146,10 @@
       "default": null
     },
     "checksum": {
+      "type": "string",
+      "pattern": "^[a-fA-F0-9]{64}$"
+    },
+    "modulePath": {
       "type": "string"
     },
     "signature": {

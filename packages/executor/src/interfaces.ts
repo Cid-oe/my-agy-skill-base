@@ -23,6 +23,7 @@ export interface ExecutorOptions {
   policyEngine?: IPolicyEngine;
   eventBus?: IEventBus;
   maxWorkers?: number;
+  shutdownTimeoutMs?: number;
 }
 
 export interface IExecutor extends ISubsystem {

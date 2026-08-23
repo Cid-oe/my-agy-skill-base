@@ -7,6 +7,8 @@
 **Status:** **NOT PRODUCTION READY (Early Architectural Prototype)**  
 **Reconciled Production Readiness Score:** **1.5 / 10**
 
+> **Historical baseline:** This audit describes the pre-remediation implementation. See [`ADVERSARIAL_AUDIT_REPORT.md`](ADVERSARIAL_AUDIT_REPORT.md) and `IMPLEMENTATION_STATUS.md` for the current implementation and verification status.
+
 ---
 
 ## 1. Executive Summary

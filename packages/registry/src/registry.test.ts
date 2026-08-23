@@ -208,10 +208,11 @@ test('SkillRegistry scans directory roots for manifests', async () => {
         triggerPredicates: [],
         permissions: [],
         capabilities: ['scanner'],
-        entryPoint: 'index.ts',
+        entryPoint: 'index.mjs',
       }),
       'utf-8'
     );
+    fs.writeFileSync(path.join(skillDir, 'index.mjs'), 'export async function execute() { return { ok: true }; }', 'utf-8');
 
     const registry = new SkillRegistry();
     await registry.boot();
@@ -249,13 +250,14 @@ test('SkillRegistry scan quarantines malformed manifests and recurses nested dir
       triggerPredicates: [],
       permissions: [],
       capabilities: ['nested'],
-      entryPoint: 'index.ts',
+      entryPoint: 'index.mjs',
     };
 
     // Valid skill nested TWO levels deep (root/group/nested-skill/manifest.json).
     const deepDir = path.join(tempDir, 'group', 'nested-skill');
     fs.mkdirSync(deepDir, { recursive: true });
     fs.writeFileSync(path.join(deepDir, 'manifest.json'), JSON.stringify(validManifest), 'utf-8');
+    fs.writeFileSync(path.join(deepDir, 'index.mjs'), 'export async function execute() { return { ok: true }; }', 'utf-8');
 
     // Malformed manifest one level deep.
     const badDir = path.join(tempDir, 'broken-skill');

@@ -78,6 +78,11 @@ test('PolicyEngine issues and validates Leases against RuntimeState', async () =
 
   const engine = new PolicyEngine({ runtimeState: state });
   await engine.boot();
+  engine.registerPolicy({
+    name: 'TestAllow',
+    priority: 100,
+    evaluate: (req) => ({ ...req, decision: 'allow', reason: 'test permit', policyVersion: '1.0.0' }),
+  });
 
   const lease = await engine.issueLease(
     'agent-worker-1',
@@ -131,6 +136,11 @@ test('PolicyEngine validates subpath scope containment constraints', async () =>
 
   const engine = new PolicyEngine({ runtimeState: state });
   await engine.boot();
+  engine.registerPolicy({
+    name: 'TestAllow',
+    priority: 100,
+    evaluate: (req) => ({ ...req, decision: 'allow', reason: 'test permit', policyVersion: '1.0.0' }),
+  });
 
   const lease = await engine.issueLease(
     'scoped-worker',
@@ -162,6 +172,11 @@ test('PolicyEngine rejects prefix-collision and path-traversal scope bypasses (E
 
   const engine = new PolicyEngine({ runtimeState: state });
   await engine.boot();
+  engine.registerPolicy({
+    name: 'TestAllow',
+    priority: 100,
+    evaluate: (req) => ({ ...req, decision: 'allow', reason: 'test permit', policyVersion: '1.0.0' }),
+  });
 
   // Prefix collision: '/data/priv' must NOT cover '/data/private'
   const collisionLease = await engine.issueLease(
@@ -211,6 +226,11 @@ test('PolicyEngine rejects expired leases and sweeps them from state', async () 
 
   const engine = new PolicyEngine({ runtimeState: state });
   await engine.boot();
+  engine.registerPolicy({
+    name: 'TestAllow',
+    priority: 100,
+    evaluate: (req) => ({ ...req, decision: 'allow', reason: 'test permit', policyVersion: '1.0.0' }),
+  });
 
   // Create lease that expires in 10ms
   const lease = await engine.issueLease(

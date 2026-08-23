@@ -72,8 +72,9 @@ function matchesType(value: unknown, type: JsonSchemaType | JsonSchemaType[]): b
       case 'string':
         return typeof value === 'string';
       case 'number':
+        return typeof value === 'number' && Number.isFinite(value);
       case 'integer':
-        return typeof value === 'number';
+        return typeof value === 'number' && Number.isInteger(value);
       case 'boolean':
         return typeof value === 'boolean';
       case 'null':
@@ -98,7 +99,7 @@ export function validateManifestAgainstSchema(manifest: unknown, schema: JsonSch
 
   const root = manifest as Record<string, unknown>;
   for (const field of schema.required ?? []) {
-    if (!(field in root)) {
+    if (!(field in root) || root[field] === undefined) {
       issues.push({ path: `$.${field}`, message: `required field '${field}' is missing` });
     }
   }
@@ -159,7 +160,7 @@ function validateValue(
   if (typeof value === 'object' && value !== null && !Array.isArray(value) && property.properties !== undefined) {
     const obj = value as Record<string, unknown>;
     for (const field of property.required ?? []) {
-      if (!(field in obj)) {
+      if (!(field in obj) || obj[field] === undefined) {
         issues.push({ path: `${path}.${field}`, message: `required field '${field}' is missing` });
       }
     }

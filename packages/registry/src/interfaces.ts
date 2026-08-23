@@ -12,13 +12,13 @@ export interface LoadedSkill {
   refCount: number;
   /**
    * Absolute path to an executable module, or undefined for declarative skills.
-   * When set, the executor runs the skill in an isolated worker (SRC-1/2/3).
+   * When set, the executor runs the skill in a restricted child process (SRC-1/2/3).
    */
   readonly modulePath?: string;
   /**
-   * In-process handler used only for declarative skills (no modulePath). For
-   * module-backed skills the executor ignores this and runs the module in a
-   * worker. This is an explicit passthrough, not a fake execution result.
+   * Adapter used only for declarative skills (no modulePath). The executor
+   * serializes it into the restricted child process; module-backed skills use
+   * the module entry point instead.
    */
   execute(context: Record<string, unknown>): Promise<unknown>;
   dispose(): Promise<void>;

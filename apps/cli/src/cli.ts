@@ -53,7 +53,7 @@ export function defaultPersistenceDir(): string {
 export async function createCliRuntime(options: CliRuntimeOptions = {}): Promise<CliRuntime> {
   const home = options.persistenceDir;
   const kernel = new Kernel();
-  const bus = new EventBus();
+  const bus = new EventBus({ persistenceDir: home ? path.join(home, 'events') : undefined });
   const store = new ArtifactStore({ eventBus: bus, persistenceDir: home ? path.join(home, 'artifacts') : undefined });
   const state = new RuntimeState({ eventBus: bus, persistenceDir: home ? path.join(home, 'state') : undefined });
   const policy = new PolicyEngine({ runtimeState: state });
@@ -79,8 +79,8 @@ export async function createCliRuntime(options: CliRuntimeOptions = {}): Promise
   // Register in topological startup order per Phase 5
   kernel.registerSubsystem(bus);
   kernel.registerSubsystem(store);
-  kernel.registerSubsystem(policy);
   kernel.registerSubsystem(state);
+  kernel.registerSubsystem(policy);
   kernel.registerSubsystem(registry);
   kernel.registerSubsystem(loader);
   kernel.registerSubsystem(resolver);
@@ -141,8 +141,11 @@ export async function handleCliCommand(
       } catch (e) {
         return { success: false, output: `Invalid JSON manifest: ${e instanceof Error ? e.message : String(e)}` };
       }
-      const handle = await rt.registry.register(manifest);
-      return { success: true, output: `Installed skill ${handle.id}@${handle.version}` };
+      const sourceRoot = rest[1] ? path.resolve(rest[1]) : undefined;
+      if (sourceRoot && !manifest.modulePath) manifest.modulePath = path.resolve(sourceRoot, manifest.entryPoint);
+      const handle = await rt.registry.register(manifest, sourceRoot);
+      const mode = manifest.modulePath ? 'executable' : 'declarative';
+      return { success: true, output: `Installed skill ${handle.id}@${handle.version} (${mode})` };
     }
 
     if (cmd === 'skill' && subcmd === 'list') {
@@ -209,7 +212,7 @@ export async function handleCliCommand(
 
     return {
       success: false,
-      output: `Unknown command: ${args.join(' ')}. Available commands: status, skill list, skill scan [dir], skill install <json>, run <goal> <artifact>`,
+      output: `Unknown command: ${args.join(' ')}. Available commands: status, skill list, skill scan [dir], skill install <json> [skill-root], run <goal> <artifact>`,
     };
   } finally {
     if (!runtime) {

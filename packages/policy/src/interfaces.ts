@@ -18,6 +18,7 @@ export interface IPolicyEngine extends ISubsystem {
   evaluate(request: PolicyRequest): Promise<PolicyDecision>;
   issueLease(subject: string, capabilities: Capability[], ttlMs?: number): Promise<Lease>;
   validateLease(leaseId: UUID, requestedCapability: Capability): Promise<boolean>;
+  validateLeaseIdentity(leaseId: UUID, subject: string): Promise<boolean>;
   revokeLease(leaseId: UUID): Promise<boolean>;
   sweepExpiredLeases(): Promise<number>;
   health(): Promise<SubsystemHealth> | SubsystemHealth;

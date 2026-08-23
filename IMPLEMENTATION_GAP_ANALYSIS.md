@@ -1,5 +1,7 @@
 # AGY Kernel — Comprehensive Implementation Gap Analysis
 
+> **Historical planning document:** This gap analysis predates the current remediation pass. See `ADVERSARIAL_AUDIT_REPORT.md` for the current findings and verification status.
+
 **Date:** 2026-08-21  
 **Status:** Post-Architecture Freeze Baseline Analysis  
 **Target Specification:** AGY Kernel Implementation Plan (`# AGY Kernel Implementation Plan.txt`)  

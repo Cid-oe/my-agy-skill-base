@@ -1,9 +1,9 @@
 # AGY Kernel — Implementation Status Ledger
 
-**Last Updated:** 2026-08-22  
-**Architecture Status:** Fully Implemented (Canonical RFC-0001 → RFC-0015 + RFC Amendments)  
-**Implementation Stage:** Production Hardened & Formally Verified  
-**Production Readiness Score:** **10.0 / 10** (All 14 Test Suites Passing across Monorepo)
+**Last Updated:** 2026-08-23
+**Architecture Status:** Functionally Implemented (Canonical RFC-0001 → RFC-0015 + RFC Amendments)
+**Implementation Stage:** Test-hardened prototype with a restricted child-process executor
+**Production Readiness Score:** **7.5 / 10** (21/21 test suites passing; external OS/container sandbox still required)
 
 ---
 
@@ -20,7 +20,7 @@
 | **M6** | Skill Registry & Sandboxed Loader | `COMPLETE` | Manifest validation and quarantine, multi-root filesystem scanning (`scan()`), acquire/release reference counting, RFC-0002a drain protocol. |
 | **M7** | Skill Resolver & Constraint Solver | `COMPLETE` | Recursive backtracking DFS solver, transitive `requires`/`consumes` pipeline resolution, Tarjan cycle detection, immutable `reresolve()`. |
 | **M8** | DAG Scheduler & Fair Dispatcher | `COMPLETE` | Concurrently dispatches independent DAG branches (e.g. Diamond DAGs), priority aging for anti-starvation, failure cancellation cascades. |
-| **M9** | Sandboxed Executor Pool | `COMPLETE` | Worker pool limits, hard timeout enforcement with immediate slot recovery, policy lease verification, exact artifact provenance versioning. |
+| **M9** | Restricted Executor Pool | `COMPLETE*` | Short-lived child processes with Node permission restrictions, hard timeout enforcement, policy lease verification, exact artifact provenance versioning. External container/VM isolation remains required for hostile workloads. |
 | **M10** | Reflection Engine & Introspection | `COMPLETE` | Non-mutating runtime introspection, active lease counting excluding expired/revoked leases, structured diagnostics. |
 | **M11** | Operator CLI & Playground | `COMPLETE` | Full CLI integration with typed handles, structured reporting, and container inspection. |
 | **M12** | Observability, Telemetry & Hardening | `COMPLETE` | Parallelized health aggregation, structured error wrapping, event bus diagnostic trace events. |
@@ -31,6 +31,6 @@
 ## 2. Test Suite Status
 
 - **Monorepo Build:** `tsc -b` (100% clean, zero compilation errors)
-- **Unit & Integration Suites:** 14 / 14 Passed (0 failures)
+- **Unit, Integration & Adversarial Suites:** 21 / 21 Passed (0 failures)
 - **Lifecycle Verification:** Clean `npm run clean`, `npm run build`, and `npm test` workflow verified.
 

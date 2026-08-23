@@ -1,4 +1,4 @@
-// Reference executable skill module for AGY (runs inside an isolated worker).
+// Reference executable skill module for AGY (runs inside a restricted child process).
 //
 // A real skill exports an async `execute(context)` and returns a serializable
 // result. The executor stores JSON.stringify(result) as the task's output

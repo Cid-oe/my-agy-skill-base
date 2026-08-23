@@ -28,8 +28,8 @@ export interface IArtifactStore extends ISubsystem {
   get(hash: Hash): Promise<Buffer | null>;
   getStream(hash: Hash): Promise<Readable | null>;
   getEnvelope(hash: Hash): Promise<ArtifactEnvelope | null>;
-  pin(hash: Hash): Promise<void>;
-  unpin(hash: Hash): Promise<void>;
+  pin(hash: Hash, holderId?: string): Promise<void>;
+  unpin(hash: Hash, holderId?: string): Promise<void>;
   incrementRefCount(hash: Hash): Promise<number>;
   decrementRefCount(hash: Hash): Promise<number>;
   gc(): Promise<GcReport>;

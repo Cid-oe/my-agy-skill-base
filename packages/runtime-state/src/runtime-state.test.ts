@@ -187,6 +187,7 @@ test('RuntimeState checkpoints and compacts the WAL to bound growth (EX-5)', asy
     assert.ok(walRecords.length < 10, `WAL should be compacted, got ${walRecords.length} records`);
 
     // Reboot must restore full state (10 plans) from snapshot + residual WAL.
+    await state.shutdown();
     const state2 = new RuntimeState({ persistenceDir: tempDir, checkpointIntervalCommands: 2 });
     await state2.boot();
     const snap = state2.getSnapshot();

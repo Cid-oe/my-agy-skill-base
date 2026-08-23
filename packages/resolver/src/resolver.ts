@@ -10,15 +10,16 @@ import {
   PlanEdge,
   PlanNode,
   Predicate,
-  SemVer,
   SkillManifest,
   SubsystemHealth,
   UUID,
   AgyError,
   asUUID,
+  deepClone,
 } from '@agy/shared';
 import { ISkillRegistry } from '@agy/registry';
 import { Goal, ISkillResolver, ResolutionResult, ResolverRuntimeState } from './interfaces.js';
+import { satisfiesVersion } from './version-constraints.js';
 
 export class SkillResolver implements ISkillResolver {
   public readonly id: UUID = asUUID('skill-resolver');
@@ -109,7 +110,7 @@ export class SkillResolver implements ISkillResolver {
 
     // Step 3: Check Cycle Detection on resolved skills
     const skillsList = Array.from(solution.skills.values());
-    const cycle = this.detectCycle(skillsList);
+    const cycle = this.detectCycle(skillsList, state);
     if (cycle) {
       diagnostics.push(`Cycle detected in dependency graph: ${cycle.join(' -> ')}`);
       return {
@@ -144,40 +145,12 @@ export class SkillResolver implements ISkillResolver {
         allSkills.set(skill.id, skill);
       }
 
-      const queue = Array.from(allSkills.values());
-      const visited = new Set<string>(queue.map((s) => s.id));
-
-      while (queue.length > 0) {
-        const curr = queue.shift()!;
-        // Expand direct skill requirements
-        if (curr.requires) {
-          for (const reqSkillId of curr.requires) {
-            if (!visited.has(reqSkillId)) {
-              const reqManifest = registry.getActiveVersion(reqSkillId);
-              if (!reqManifest) return null; // Transitive dependency missing
-              visited.add(reqSkillId);
-              allSkills.set(reqSkillId, reqManifest);
-              queue.push(reqManifest);
-            }
-          }
-        }
-        // Expand consumed artifact requirements
-        if (curr.consumes) {
-          for (const consumedArtifact of curr.consumes) {
-            const producers = registry.findByProduces(consumedArtifact);
-            if (producers.length > 0) {
-              const prod = producers[0];
-              if (!visited.has(prod.id)) {
-                visited.add(prod.id);
-                allSkills.set(prod.id, prod);
-                queue.push(prod);
-              }
-            }
-          }
-        }
-      }
-
-      const skillsArray = Array.from(allSkills.values());
+      const initialSkills = new Map(allSkills);
+      const expanded = this.expandTransitiveDependencies(initialSkills, registry, state);
+      if (!expanded) return null;
+      const skillsArray = Array.from(expanded.values());
+      allSkills.clear();
+      for (const skill of skillsArray) allSkills.set(skill.id, skill);
       const exclusivity = this.checkExclusivity(skillsArray);
       if (!exclusivity.ok) return null;
 
@@ -222,17 +195,85 @@ export class SkillResolver implements ISkillResolver {
   }
 
   /**
+   * Expand requires/consumes with backtracking across multiple artifact
+   * producers. Each branch gets fresh maps so an incompatible producer cannot
+   * poison the remaining alternatives.
+   */
+  private expandTransitiveDependencies(
+    initial: Map<string, SkillManifest>,
+    registry: ISkillRegistry,
+    state: ResolverRuntimeState
+  ): Map<string, SkillManifest> | null {
+    const expand = (skills: Map<string, SkillManifest>, pending: SkillManifest[], visited: Set<string>): Map<string, SkillManifest> | null => {
+      const current = pending.shift();
+      if (!current) return skills;
+
+      const nextSkills = new Map(skills);
+      const nextPending = [...pending];
+      const nextVisited = new Set(visited);
+      for (const requiredId of current.requires ?? []) {
+        const required = registry.getActiveVersion(requiredId);
+        if (!required) return null;
+        if (current.requiresSkillVersion && !satisfiesVersion(required.version, current.requiresSkillVersion, requiredId)) return null;
+        if (!nextVisited.has(requiredId)) {
+          nextVisited.add(requiredId);
+          nextSkills.set(requiredId, required);
+          nextPending.push(required);
+        }
+      }
+
+      const consumed = (current.consumes ?? []).filter((artifact) => !state.availableArtifacts?.includes(artifact));
+      const chooseProducer = (
+        index: number,
+        branchSkills: Map<string, SkillManifest>,
+        branchPending: SkillManifest[],
+        branchVisited: Set<string>
+      ): Map<string, SkillManifest> | null => {
+        if (index >= consumed.length) return expand(branchSkills, branchPending, branchVisited);
+        const artifact = consumed[index];
+        const candidates = this.rankCandidates(
+          registry.findByProduces(artifact).filter((candidate) => this.evalPredicates(candidate.triggerPredicates, state)),
+          state
+        );
+        for (const producer of candidates) {
+          if (producer.id === current.id) continue;
+          const candidateSkills = new Map(branchSkills);
+          const candidatePending = [...branchPending];
+          const candidateVisited = new Set(branchVisited);
+          if (!candidateVisited.has(producer.id)) {
+            candidateVisited.add(producer.id);
+            candidateSkills.set(producer.id, producer);
+            candidatePending.push(producer);
+          }
+          const result = chooseProducer(index + 1, candidateSkills, candidatePending, candidateVisited);
+          if (result) return result;
+        }
+        return null;
+      };
+
+      return chooseProducer(0, nextSkills, nextPending, nextVisited);
+    };
+
+    return expand(new Map(initial), [...initial.values()], new Set(initial.keys()));
+  }
+
+  /**
    * Detect cycles in the resolved skill dependency graph using Tarjan's
    * strongly-connected-components algorithm (SRC-10). Returns a node-id path
    * describing the first cyclic SCC, or null if the graph is acyclic.
    */
-  private detectCycle(skills: SkillManifest[]): string[] | null {
+  private detectCycle(skills: SkillManifest[], state: ResolverRuntimeState): string[] | null {
     const adj = new Map<string, string[]>();
     const nodes = new Set<string>();
     for (const s of skills) {
       nodes.add(s.id);
       const deps = (s.requires ? [...s.requires] : []).filter((r) => skills.some((x) => x.id === r));
-      adj.set(s.id, deps);
+      for (const consumed of s.consumes ?? []) {
+        if (state.availableArtifacts?.includes(consumed)) continue;
+        const producer = skills.find((candidate) => candidate.produces?.includes(consumed));
+        if (producer) deps.push(producer.id);
+      }
+      adj.set(s.id, [...new Set(deps)]);
     }
 
     let index = 0;
@@ -318,7 +359,7 @@ export class SkillResolver implements ISkillResolver {
   public async reresolve(
     plan: ExecutionPlan,
     failedNodeId: UUID,
-    _state: ResolverRuntimeState = {},
+    state: ResolverRuntimeState = {},
     registry?: ISkillRegistry
   ): Promise<ResolutionResult> {
     // Return immutable deep clone with substitution
@@ -343,21 +384,54 @@ export class SkillResolver implements ISkillResolver {
 
     const nextSkillId = targetNode.fallbackChain[0];
 
-    // Validate the fallback skill exists and resolve its version before
-    // substituting (SRC-12). Without a registry the substitution is preserved
-    // for backwards compatibility but cannot be validated.
-    let nextVersion: string | undefined;
-    if (registry) {
-      const fallbackManifest = registry.getActiveVersion(nextSkillId);
-      if (!fallbackManifest) {
+    // A fallback is executable only when a registry can validate its identity,
+    // output contract, dependencies, and security metadata. Accepting an
+    // arbitrary ID here would bypass the resolver and policy preparation path.
+    if (!registry) {
+      return {
+        status: 'unresolvable', plan: null, unresolvedSlots: [nextSkillId],
+        diagnostics: ['A registry is required to validate fallback substitutions'],
+      };
+    }
+    const fallbackManifest = registry.getActiveVersion(nextSkillId);
+    const originalManifest = registry.getActiveVersion(targetNode.skillRef.id);
+    if (!fallbackManifest || !originalManifest) {
+      return {
+        status: 'unresolvable', plan: null, unresolvedSlots: [nextSkillId],
+        diagnostics: [`Fallback skill ${nextSkillId} is not registered`],
+      };
+    }
+    if (!fallbackManifest.produces.some((artifact) => originalManifest.produces.includes(artifact))) {
+      return {
+        status: 'unresolvable', plan: null, unresolvedSlots: [nextSkillId],
+        diagnostics: [`Fallback skill ${nextSkillId} does not produce an output of ${targetNode.skillRef.id}`],
+      };
+    }
+    const planSkillIds = new Set(plan.nodes.map((node) => node.skillRef.id));
+    for (const dependency of fallbackManifest.requires) {
+      if (!registry.getActiveVersion(dependency)) {
         return {
-          status: 'unresolvable',
-          plan: null,
-          unresolvedSlots: [nextSkillId],
-          diagnostics: [`Fallback skill ${nextSkillId} is not registered`],
+          status: 'unresolvable', plan: null, unresolvedSlots: [dependency],
+          diagnostics: [`Fallback skill ${nextSkillId} requires missing skill ${dependency}`],
         };
       }
-      nextVersion = fallbackManifest.version;
+      if (!planSkillIds.has(dependency)) {
+        return {
+          status: 'unresolvable', plan: null, unresolvedSlots: [dependency],
+          diagnostics: [`Fallback skill ${nextSkillId} requires a dependency absent from the existing plan: ${dependency}`],
+        };
+      }
+    }
+    for (const consumed of fallbackManifest.consumes) {
+      if (state.availableArtifacts?.includes(consumed)) continue;
+      const hasProducer = plan.nodes.some((node) => node.skillRef.id !== nextSkillId
+        && registry.getActiveVersion(node.skillRef.id)?.produces.includes(consumed));
+      if (!hasProducer) {
+        return {
+          status: 'unresolvable', plan: null, unresolvedSlots: [consumed],
+          diagnostics: [`Fallback skill ${nextSkillId} has an input absent from the existing plan: ${consumed}`],
+        };
+      }
     }
 
     const newNodes: PlanNode[] = plan.nodes.map((n) => {
@@ -366,18 +440,27 @@ export class SkillResolver implements ISkillResolver {
           ...n,
           skillRef: {
             ...n.skillRef,
-            id: nextSkillId,
-            ...(nextVersion ? { version: nextVersion as SemVer } : {}),
-            registryRef: `registry://${nextSkillId}@${nextVersion ?? n.skillRef.version}`,
+            id: fallbackManifest.id,
+            version: fallbackManifest.version,
+            registryRef: `registry://${fallbackManifest.id}@${fallbackManifest.version}`,
+            lifecycleState: 'loaded',
           },
-          selectionReason: `Fallback escalation from failed execution`,
+          inputs: deepClone(n.inputs),
+          limits: deepClone(n.limits),
+          selectionReason: 'Fallback escalation from failed execution',
           fallbackChain: n.fallbackChain ? n.fallbackChain.slice(1) : [],
+          confidenceThreshold: fallbackManifest.confidenceThreshold,
+          requiredCapabilities: deepClone(fallbackManifest.permissions ?? []),
+          priority: fallbackManifest.priority,
           state: 'ready',
         };
       }
       return {
         ...n,
-        skillRef: { ...n.skillRef },
+        skillRef: deepClone(n.skillRef),
+        inputs: deepClone(n.inputs),
+        limits: deepClone(n.limits),
+        requiredCapabilities: deepClone(n.requiredCapabilities ?? []),
         fallbackChain: n.fallbackChain ? [...n.fallbackChain] : [],
       };
     });
@@ -483,7 +566,7 @@ export class SkillResolver implements ISkillResolver {
         selectionReason: `Selected via highest priority ranking`,
         confidenceThreshold: s.confidenceThreshold,
         fallbackChain: fallbackMap.get(s.id) || [],
-        requiredCapabilities: s.permissions ? [...s.permissions] : [],
+        requiredCapabilities: deepClone(s.permissions ?? []),
         priority: s.priority,
       };
     });
