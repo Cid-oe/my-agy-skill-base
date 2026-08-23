@@ -3,7 +3,7 @@ import assert from 'node:assert';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
-import { createCliRuntime, handleCliCommand } from './cli.js';
+import { createCliRuntime, handleCliCommand, initializeWorkspace } from './cli.js';
 import { SkillManifest, asSemVer } from '@agy/shared';
 
 test('CLI status command inspects runtime and subsystems', async () => {
@@ -137,4 +137,78 @@ test('CLI run drives a multi-stage dependency plan to completion (EX-2)', async 
   assert.strictEqual(runRes.output.includes('status: completed'), true);
 
   await rt.kernel.shutdown();
+});
+
+test('CLI Skill Hunt commands initialize, discover, inspect, rank, path, and inspect artifacts', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agy-skill-hunt-'));
+  const skillDir = path.join(tempDir, 'examples', 'reader');
+  const manifest: SkillManifest = {
+    id: 'reader-skill',
+    name: 'README Reader',
+    version: asSemVer('1.0.0'),
+    description: 'Reads markdown files',
+    priority: 'high',
+    requires: [],
+    optional: [],
+    consumes: ['FileReadRequest'],
+    produces: ['FileContent'],
+    exclusiveWith: [],
+    confidenceThreshold: 0.9,
+    triggerPredicates: [],
+    permissions: [],
+    capabilities: ['file-read', 'markdown'],
+    entryPoint: 'skill.mjs',
+  };
+  try {
+    const initialized = initializeWorkspace(tempDir);
+    assert.ok(initialized.created.includes('agy.config.json'));
+    assert.ok(fs.existsSync(path.join(tempDir, '.agy', 'artifacts')));
+    assert.deepStrictEqual(initializeWorkspace(tempDir).created, []);
+    initializeWorkspace(tempDir, true);
+
+    fs.mkdirSync(skillDir, { recursive: true });
+    fs.writeFileSync(path.join(skillDir, 'manifest.json'), JSON.stringify(manifest));
+    fs.writeFileSync(path.join(skillDir, 'skill.mjs'), 'export async function execute() { return {}; }');
+    fs.writeFileSync(path.join(skillDir, 'README.md'), '# Reader');
+
+    const rt = await createCliRuntime();
+    const scan = await handleCliCommand(['registry', 'scan', path.join(tempDir, 'examples')], rt);
+    assert.strictEqual(scan.success, true);
+    assert.match(scan.output, /registered 1 skills/);
+
+    const search = await handleCliCommand(['skill', 'search', 'markdown'], rt);
+    assert.strictEqual(search.success, true);
+    assert.match(search.output, /reader-skill@1.0.0/);
+
+    const inspect = await handleCliCommand(['skill', 'inspect', 'reader-skill'], rt);
+    assert.strictEqual(inspect.success, true);
+    assert.match(inspect.output, /Entry point: skill.mjs/);
+    assert.strictEqual((await handleCliCommand(['skill', 'inspect', 'missing'], rt)).success, false);
+
+    const validation = await handleCliCommand(['skill', 'validate', skillDir], rt);
+    assert.strictEqual(validation.success, true);
+    assert.match(validation.output, /Score: 100\/100/);
+
+    const rank = await handleCliCommand(['skill', 'rank', '--produces', 'FileContent'], rt);
+    assert.strictEqual(rank.success, true);
+    assert.match(rank.output, /reader-skill/);
+
+    const parser: SkillManifest = { ...manifest, id: 'parser-skill', consumes: ['FileContent'], produces: ['ParsedMarkdown'] };
+    await rt.registry.register(parser);
+    const paths = await handleCliCommand(['skill', 'paths', 'FileReadRequest', 'ParsedMarkdown'], rt);
+    assert.strictEqual(paths.success, true);
+    assert.match(paths.output, /FileReadRequest -> reader-skill -> FileContent -> parser-skill -> ParsedMarkdown/);
+
+    const aliasRun = await handleCliCommand(['goal', 'run', 'parse markdown', 'ParsedMarkdown'], rt);
+    assert.strictEqual(aliasRun.success, true);
+
+    const artifact = await rt.store.put('{"ok":true}', { kind: 'test' }, { id: 'reader-skill', version: asSemVer('1.0.0') }, 'application/json');
+    const artifactInspection = await handleCliCommand(['artifact', 'inspect', artifact.hash], rt);
+    assert.strictEqual(artifactInspection.success, true);
+    assert.match(artifactInspection.output, /Preview: {"ok":true}/);
+    assert.strictEqual((await handleCliCommand(['artifact', 'inspect', 'missing-hash'], rt)).success, false);
+    await rt.kernel.shutdown();
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
 });

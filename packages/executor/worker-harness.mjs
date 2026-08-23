@@ -6,6 +6,7 @@
 // parent. This file is a static runtime asset resolved relative to the
 // compiled executor (packages/executor/dist -> ../worker-harness.mjs).
 import { isMainThread, parentPort, workerData } from 'node:worker_threads';
+import { pathToFileURL } from 'node:url';
 
 async function run() {
   if (isMainThread || !parentPort || !workerData) {
@@ -13,7 +14,11 @@ async function run() {
   }
   const { modulePath, context } = workerData;
   try {
-    const mod = await import(modulePath);
+    // Dynamic import treats a Windows absolute path as a URL with a `c:`
+    // scheme. Convert filesystem paths explicitly while still accepting an
+    // already-qualified module URL from a caller.
+    const moduleUrl = modulePath.startsWith('file:') ? modulePath : pathToFileURL(modulePath).href;
+    const mod = await import(moduleUrl);
     const execute = typeof mod.execute === 'function'
       ? mod.execute
       : typeof mod.default === 'function'
