@@ -1,0 +1,17 @@
+{
+  "id": "echo-skill",
+  "name": "Echo Skill",
+  "version": "1.0.0",
+  "description": "Reference executable skill. Runs inside an isolated worker thread and emits an EchoReport artifact.",
+  "priority": "medium",
+  "requires": [],
+  "optional": [],
+  "consumes": [],
+  "produces": ["EchoReport"],
+  "exclusiveWith": [],
+  "confidenceThreshold": 0.8,
+  "triggerPredicates": [],
+  "permissions": [],
+  "capabilities": ["echo"],
+  "entryPoint": "skill.mjs"
+}

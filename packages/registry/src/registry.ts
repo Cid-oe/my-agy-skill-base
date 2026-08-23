@@ -224,6 +224,11 @@ export class SkillRegistry implements ISkillRegistry {
         try {
           const content = fs.readFileSync(manifestPath, 'utf-8');
           const manifest = JSON.parse(content) as SkillManifest;
+          // Resolve an executable module path relative to the manifest's
+          // directory so discovered skills run in the worker sandbox.
+          if (!manifest.modulePath && manifest.entryPoint) {
+            manifest.modulePath = path.join(dir, manifest.entryPoint);
+          }
           await this.register(manifest, dir);
           discovered.push(manifest);
         } catch (err: unknown) {
