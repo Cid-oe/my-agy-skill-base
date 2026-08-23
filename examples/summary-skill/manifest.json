@@ -1,0 +1,17 @@
+{
+  "id": "summary-skill",
+  "name": "Summary Skill",
+  "version": "1.0.0",
+  "description": "Reference executable skill that consumes an EchoReport and emits a Summary, exercising a data-dependency edge end-to-end.",
+  "priority": "medium",
+  "requires": [],
+  "optional": [],
+  "consumes": ["EchoReport"],
+  "produces": ["Summary"],
+  "exclusiveWith": [],
+  "confidenceThreshold": 0.8,
+  "triggerPredicates": [],
+  "permissions": [],
+  "capabilities": ["summary"],
+  "entryPoint": "skill.mjs"
+}
