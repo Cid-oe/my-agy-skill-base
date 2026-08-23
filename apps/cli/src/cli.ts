@@ -70,9 +70,10 @@ export async function createCliRuntime(options: CliRuntimeOptions = {}): Promise
   });
   const reflection = new ReflectionEngine({ runtimeState: state });
 
-  // Connect scheduler task dispatcher to executor
+  // Connect scheduler task dispatcher to executor. Returns the ExecutionResult
+  // so the scheduler can capture output artifacts and pass them downstream.
   scheduler.registerDispatcher(async (task: TaskContext, node: PlanNode) => {
-    await executor.execute(task, node.limits);
+    return executor.execute(task, node.limits);
   });
 
   // Register in topological startup order per Phase 5

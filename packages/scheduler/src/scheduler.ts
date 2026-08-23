@@ -5,7 +5,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { ExecutionPlan, ICancellationToken, PlanNode, PlanEdge, SubsystemHealth, TaskContext, UUID, asUUID, AgyError } from '@agy/shared';
+import { ArtifactEnvelope, ExecutionPlan, ICancellationToken, PlanNode, PlanEdge, SubsystemHealth, TaskContext, UUID, asUUID, AgyError } from '@agy/shared';
 import { IEventBus } from '@agy/event-bus';
 import { IRuntimeState } from '@agy/runtime-state';
 import { IPolicyEngine } from '@agy/policy';
@@ -79,6 +79,7 @@ export class Scheduler implements IScheduler {
   private _planTokens = new Map<UUID, SimpleCancellationToken>();
   private _nodeCompletion = new Map<UUID, Set<UUID>>();
   private _inFlightPromises = new Map<UUID, Promise<void>[]>();
+  private _nodeOutputs = new Map<UUID, Map<UUID, ArtifactEnvelope[]>>();
   private _dispatcher?: TaskDispatcher;
   private _accepting = true;
   private _isReady = false;
@@ -149,6 +150,7 @@ export class Scheduler implements IScheduler {
     this._planTokens.set(plan.planId, new SimpleCancellationToken());
     this._nodeCompletion.set(plan.planId, new Set());
     this._inFlightPromises.set(plan.planId, []);
+    this._nodeOutputs.set(plan.planId, new Map());
 
     if (this._runtimeState) {
       await this._runtimeState.trackPlan(plan.planId);
@@ -264,20 +266,36 @@ export class Scheduler implements IScheduler {
               revoked: false,
             };
 
+        // Gather input artifacts from upstream completed nodes (data + ordering
+        // edges) so downstream skills can consume upstream outputs.
+        const planOutputs = this._nodeOutputs.get(planId) ?? new Map<UUID, ArtifactEnvelope[]>();
+        const inputs: ArtifactEnvelope[] = [];
+        for (const edge of plan.edges) {
+          if (edge.toNodeId === item.node.nodeId && (edge.kind === 'data' || edge.kind === 'ordering')) {
+            const upstream = planOutputs.get(edge.fromNodeId);
+            if (upstream) inputs.push(...upstream);
+          }
+        }
+
         const taskContext: TaskContext = {
           taskId: item.taskId,
           nodeId: item.node.nodeId,
           planId: item.planId,
           lease,
           cancellationToken,
+          inputs,
         };
 
         dispatchedCount++;
 
         const p = this._dispatcher(taskContext, item.node)
-          .then(async () => {
+          .then(async (res) => {
             item.node.state = 'done';
             completed.add(item.node.nodeId);
+            // Capture this node's output artifacts for downstream consumption.
+            if (res && Array.isArray(res.outputArtifacts) && res.outputArtifacts.length > 0) {
+              planOutputs.set(item.node.nodeId, res.outputArtifacts);
+            }
             if (plan.status === 'running' && completed.size === plan.nodes.length) {
               plan.status = 'completed';
               this.cleanupPlanExecutionResources(planId);
@@ -317,6 +335,7 @@ export class Scheduler implements IScheduler {
     this._planTokens.delete(planId);
     this._nodeCompletion.delete(planId);
     this._inFlightPromises.delete(planId);
+    this._nodeOutputs.delete(planId);
     for (const nodeId of this._nodeEnqueueTime.keys()) {
       this._nodeEnqueueTime.delete(nodeId);
     }

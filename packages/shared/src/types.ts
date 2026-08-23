@@ -211,6 +211,12 @@ export interface TaskContext {
   planId: UUID;
   lease: Lease;
   cancellationToken: ICancellationToken;
+  /**
+   * Input artifacts (envelopes) from upstream plan nodes, populated by the
+   * scheduler so downstream skills can consume upstream outputs. The executor
+   * resolves their content from the artifact store and passes it to the skill.
+   */
+  inputs?: ArtifactEnvelope[];
 }
 
 export interface ExecutionResult {
