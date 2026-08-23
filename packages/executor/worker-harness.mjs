@@ -14,11 +14,8 @@ async function run() {
   }
   const { modulePath, context } = workerData;
   try {
-    // Dynamic import treats a Windows absolute path as a URL with a `c:`
-    // scheme. Convert filesystem paths explicitly while still accepting an
-    // already-qualified module URL from a caller.
-    const moduleUrl = modulePath.startsWith('file:') ? modulePath : pathToFileURL(modulePath).href;
-    const mod = await import(moduleUrl);
+    const url = pathToFileURL(modulePath).toString();
+    const mod = await import(url);
     const execute = typeof mod.execute === 'function'
       ? mod.execute
       : typeof mod.default === 'function'

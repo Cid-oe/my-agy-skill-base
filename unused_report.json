@@ -1,0 +1,375 @@
+{
+  "unusedFiles": [
+    "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/artifact/src/index.ts",
+    "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/event-bus/src/index.ts",
+    "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/executor/src/index.ts",
+    "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/kernel/src/index.ts",
+    "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/policy/src/index.ts",
+    "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/reflection/src/index.ts",
+    "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/registry/src/index.ts",
+    "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/resolver/src/index.ts",
+    "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/runtime-state/src/index.ts",
+    "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/scheduler/src/index.ts",
+    "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/shared/src/index.ts",
+    "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/skillopt-adapter/src/index.ts",
+    "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/testkit/src/index.ts"
+  ],
+  "unusedExports": [
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/artifact/src/artifact-store.ts",
+      "name": "ArtifactStoreOptions"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/policy/src/policy-engine.ts",
+      "name": "PolicyEngineOptions"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/reflection/src/reflection-engine.ts",
+      "name": "ReflectionEngineOptions"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/registry/src/loader.ts",
+      "name": "SkillLoaderOptions"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/registry/src/manifest-validator.ts",
+      "name": "loadManifestSchema"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/registry/src/manifest-validator.ts",
+      "name": "validateManifestAgainstSchema"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/registry/src/manifest-validator.ts",
+      "name": "ManifestValidationIssue"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/registry/src/registry.ts",
+      "name": "SkillRegistryOptions"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/resolver/src/interfaces.ts",
+      "name": "Slot"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/runtime-state/src/runtime-state.ts",
+      "name": "computeCrc"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/scheduler/src/scheduler.ts",
+      "name": "SchedulerOptions"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/shared/src/errors.ts",
+      "name": "SubsystemName"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/shared/src/errors.ts",
+      "name": "AgyErrorDetails"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/shared/src/errors.ts",
+      "name": "RegistryError"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/shared/src/errors.ts",
+      "name": "PolicyError"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/shared/src/errors.ts",
+      "name": "ArtifactError"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/shared/src/errors.ts",
+      "name": "StateError"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/shared/src/errors.ts",
+      "name": "SchedulerError"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/shared/src/errors.ts",
+      "name": "ExecutionError"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/shared/src/events.ts",
+      "name": "Event"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/shared/src/events.ts",
+      "name": "EventHandler"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/shared/src/events.ts",
+      "name": "Subscription"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/shared/src/subsystem.ts",
+      "name": "ISubsystem"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/shared/src/types.ts",
+      "name": "Hash"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/shared/src/types.ts",
+      "name": "SemVer"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/shared/src/types.ts",
+      "name": "asUUID"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/shared/src/types.ts",
+      "name": "asHash"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/shared/src/types.ts",
+      "name": "asSemVer"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/shared/src/types.ts",
+      "name": "SkillLifecycleState"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/shared/src/types.ts",
+      "name": "Predicate"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/shared/src/types.ts",
+      "name": "Capability"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/shared/src/types.ts",
+      "name": "Permission"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/shared/src/types.ts",
+      "name": "SkillManifest"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/shared/src/types.ts",
+      "name": "SkillHandle"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/shared/src/types.ts",
+      "name": "ArtifactEnvelope"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/shared/src/types.ts",
+      "name": "ExecutionLimits"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/shared/src/types.ts",
+      "name": "PlanNodeState"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/shared/src/types.ts",
+      "name": "PlanNode"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/shared/src/types.ts",
+      "name": "PlanEdge"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/shared/src/types.ts",
+      "name": "ExecutionPlan"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/shared/src/types.ts",
+      "name": "Lease"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/shared/src/types.ts",
+      "name": "PolicyRequest"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/shared/src/types.ts",
+      "name": "PolicyDecision"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/shared/src/types.ts",
+      "name": "LedgerEntry"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/shared/src/types.ts",
+      "name": "ExecutionLedger"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/shared/src/types.ts",
+      "name": "StateSnapshot"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/shared/src/types.ts",
+      "name": "Command"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/shared/src/types.ts",
+      "name": "TransactionResult"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/shared/src/types.ts",
+      "name": "ICancellationToken"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/shared/src/types.ts",
+      "name": "TaskContext"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/shared/src/types.ts",
+      "name": "ExecutionResult"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/skillopt-adapter/src/comparator.ts",
+      "name": "compareMetrics"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/skillopt-adapter/src/comparator.ts",
+      "name": "formatComparisonReport"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/skillopt-adapter/src/config.ts",
+      "name": "getConfig"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/skillopt-adapter/src/config.ts",
+      "name": "resetConfigCache"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/skillopt-adapter/src/config.ts",
+      "name": "ConfigError"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/skillopt-adapter/src/config.ts",
+      "name": "LoadedConfig"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/skillopt-adapter/src/daemon.ts",
+      "name": "SkillOptDaemonOptions"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/skillopt-adapter/src/daemon.ts",
+      "name": "SkillOptDaemon"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/skillopt-adapter/src/evaluator.ts",
+      "name": "loadGoldenCases"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/skillopt-adapter/src/evaluator.ts",
+      "name": "computeMetricsFromTrajectories"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/skillopt-adapter/src/evaluator.ts",
+      "name": "EvaluatorError"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/skillopt-adapter/src/evaluator.ts",
+      "name": "GoldenCase"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/skillopt-adapter/src/evaluator.ts",
+      "name": "CandidateEvaluator"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/skillopt-adapter/src/optimizer.ts",
+      "name": "checkSkillOptInstalled"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/skillopt-adapter/src/optimizer.ts",
+      "name": "prepareJob"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/skillopt-adapter/src/optimizer.ts",
+      "name": "runSkillOptProcess"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/skillopt-adapter/src/optimizer.ts",
+      "name": "OptimizerError"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/skillopt-adapter/src/optimizer.ts",
+      "name": "JobPaths"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/skillopt-adapter/src/promoter.ts",
+      "name": "PromoterError"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/skillopt-adapter/src/registry-hook.ts",
+      "name": "SkillOptRegistryHookOptions"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/skillopt-adapter/src/security.ts",
+      "name": "htmlEscape"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/skillopt-adapter/src/security.ts",
+      "name": "detectInjection"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/skillopt-adapter/src/security.ts",
+      "name": "validateCandidatePath"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/skillopt-adapter/src/security.ts",
+      "name": "SecurityError"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/skillopt-adapter/src/trajectory.ts",
+      "name": "computeSkillContentHash"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/skillopt-adapter/src/trajectory.ts",
+      "name": "TrajectoryInput"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/skillopt-adapter/src/types.ts",
+      "name": "AdapterEvent"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/skillopt-adapter/src/versioning.ts",
+      "name": "loadVersionHistory"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/skillopt-adapter/src/versioning.ts",
+      "name": "loadVersionRecord"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/skillopt-adapter/src/versioning.ts",
+      "name": "latestVersion"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/skillopt-adapter/src/versioning.ts",
+      "name": "rollback"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/skillopt-adapter/src/versioning.ts",
+      "name": "rollbackToPrevious"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/skillopt-adapter/src/versioning.ts",
+      "name": "computeMetricDiff"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/skillopt-adapter/src/versioning.ts",
+      "name": "VersioningError"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/apps/cli/src/cli.ts",
+      "name": "defaultPersistenceDir"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/apps/cli/src/cli.ts",
+      "name": "CliRuntime"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/apps/cli/src/cli.ts",
+      "name": "CliRuntimeOptions"
+    },
+    {
+      "file": "C:/Users/cid/Videos/AGY p1/my-agy-skill-base-main (1)/my-agy-skill-base-main/packages/skillopt-adapter/src/cli/index.ts",
+      "name": "handleSkillOptCli"
+    }
+  ]
+}

@@ -17,7 +17,6 @@ function parseRows(markdown: string): MatrixRow[] {
     .filter((line) => line.startsWith('| CRIT-') || line.startsWith('| HIGH-'))
     .map((line) => {
       const cells = line
-        .trim()
         .slice(1, -1)
         .split('|')
         .map((cell) => cell.trim());

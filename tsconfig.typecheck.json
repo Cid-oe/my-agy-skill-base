@@ -17,6 +17,7 @@
       "@agy/executor": ["packages/executor/src/index.ts"],
       "@agy/reflection": ["packages/reflection/src/index.ts"],
       "@agy/kernel": ["packages/kernel/src/index.ts"],
+      "@agy/skillopt-adapter": ["packages/skillopt-adapter/src/index.ts"],
       "@agy/testkit": ["packages/testkit/src/index.ts"],
       "@agy/cli": ["apps/cli/src/index.ts"]
     }

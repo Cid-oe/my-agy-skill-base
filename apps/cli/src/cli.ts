@@ -13,10 +13,9 @@ import { SkillResolver } from '@agy/resolver';
 import { Scheduler } from '@agy/scheduler';
 import { Executor } from '@agy/executor';
 import { ReflectionEngine } from '@agy/reflection';
-import * as fs from 'node:fs';
+import { SkillOptRegistryHook, SkillOptDaemon, TrajectoryRecorder, OptimizationScheduler, handleSkillOptCli, loadConfig } from '@agy/skillopt-adapter';
 import * as path from 'node:path';
 import { SkillManifest, TaskContext, PlanNode, SubsystemHealth } from '@agy/shared';
-import { findArtifactPaths, rankSkills, searchSkills, validateSkillDirectory } from './skill-hunt.js';
 
 export interface CliRuntime {
   kernel: Kernel;
@@ -30,7 +29,8 @@ export interface CliRuntime {
   scheduler: Scheduler;
   executor: Executor;
   reflection: ReflectionEngine;
-  skillPaths: Map<string, string>;
+  skilloptHook: SkillOptRegistryHook;
+  skilloptDaemon: SkillOptDaemon;
 }
 
 export interface CliRuntimeOptions {
@@ -73,6 +73,22 @@ export async function createCliRuntime(options: CliRuntimeOptions = {}): Promise
   });
   const reflection = new ReflectionEngine({ runtimeState: state });
 
+  const { config: skilloptConfig } = loadConfig();
+  const trajectoryRecorder = new TrajectoryRecorder(skilloptConfig);
+  const optimizationScheduler = new OptimizationScheduler(skilloptConfig, trajectoryRecorder);
+
+  const skilloptHook = new SkillOptRegistryHook({
+    eventBus: bus,
+    artifactStore: store,
+    config: skilloptConfig
+  });
+
+  const skilloptDaemon = new SkillOptDaemon({
+    config: skilloptConfig,
+    recorder: trajectoryRecorder,
+    scheduler: optimizationScheduler
+  });
+
   // Connect scheduler task dispatcher to executor. Returns the ExecutionResult
   // so the scheduler can capture output artifacts and pass them downstream.
   scheduler.registerDispatcher(async (task: TaskContext, node: PlanNode) => {
@@ -90,21 +106,10 @@ export async function createCliRuntime(options: CliRuntimeOptions = {}): Promise
   kernel.registerSubsystem(scheduler);
   kernel.registerSubsystem(executor);
   kernel.registerSubsystem(reflection);
+  kernel.registerSubsystem(skilloptHook);
+  kernel.registerSubsystem(skilloptDaemon);
 
   await kernel.boot();
-
-  const skillPaths = new Map<string, string>();
-  try {
-    const configPath = path.join(process.cwd(), 'agy.config.json');
-    if (fs.existsSync(configPath)) {
-      const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-      if (Array.isArray(config.skillRoots)) {
-        await registry.scan(config.skillRoots);
-      }
-    }
-  } catch (err) {
-    // ignore
-  }
 
   return {
     kernel,
@@ -118,58 +123,9 @@ export async function createCliRuntime(options: CliRuntimeOptions = {}): Promise
     scheduler,
     executor,
     reflection,
-    skillPaths,
+    skilloptHook,
+    skilloptDaemon,
   };
-}
-
-export function initializeWorkspace(directory = process.cwd(), force = false): { created: string[] } {
-  const configPath = path.join(directory, 'agy.config.json');
-  const configExists = fs.existsSync(configPath);
-  const created: string[] = [];
-  for (const relative of ['.agy/state', '.agy/artifacts', '.agy/logs', 'skills']) {
-    const target = path.join(directory, relative);
-    if (!fs.existsSync(target)) {
-      fs.mkdirSync(target, { recursive: true });
-      created.push(relative);
-    }
-  }
-  if (!configExists || force) {
-    fs.writeFileSync(configPath, `${JSON.stringify({ version: 1, persistenceDir: '.agy', skillRoots: ['skills', 'examples'] }, null, 2)}\n`);
-    created.push('agy.config.json');
-  }
-  return { created };
-}
-
-function manifestDirectories(root: string): string[] {
-  if (!fs.existsSync(root)) return [];
-  const found: string[] = [];
-  const visit = (directory: string): void => {
-    if (fs.existsSync(path.join(directory, 'manifest.json'))) {
-      found.push(directory);
-      return;
-    }
-    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
-      if (entry.isDirectory() && entry.name !== 'node_modules' && !entry.name.startsWith('.')) visit(path.join(directory, entry.name));
-    }
-  };
-  visit(root);
-  return found;
-}
-
-async function scanSkillDirectory(rt: CliRuntime, directory: string): Promise<number> {
-  let count = 0;
-  for (const skillDirectory of manifestDirectories(directory)) {
-    const validation = validateSkillDirectory(skillDirectory);
-    if (!validation.manifest || validation.lines.some((line) => line.startsWith('FAIL'))) continue;
-    await rt.registry.register(validation.manifest, skillDirectory);
-    rt.skillPaths.set(validation.manifest.id, skillDirectory);
-    count++;
-  }
-  return count;
-}
-
-function permissions(skill: SkillManifest): string {
-  return skill.permissions.length === 0 ? 'none' : skill.permissions.map((permission) => `${permission.name}:${permission.scope}`).join(', ');
 }
 
 export async function handleCliCommand(
@@ -197,15 +153,6 @@ export async function handleCliCommand(
       return { success: true, output: summary };
     }
 
-    if (cmd === 'init') {
-      try {
-        const initialized = initializeWorkspace(process.cwd(), subcmd === '--force' || rest.includes('--force'));
-        return { success: true, output: `Initialized local AGY workspace (${initialized.created.length} paths created)` };
-      } catch (error) {
-        return { success: false, output: error instanceof Error ? error.message : String(error) };
-      }
-    }
-
     if (cmd === 'skill' && subcmd === 'install') {
       const manifestJson = rest[0];
       if (!manifestJson) {
@@ -230,77 +177,15 @@ export async function handleCliCommand(
       return { success: true, output };
     }
 
-    if ((cmd === 'skill' && subcmd === 'scan') || (cmd === 'registry' && subcmd === 'scan')) {
+    if (cmd === 'skill' && subcmd === 'scan') {
       const scanDir = rest[0] || process.cwd();
-      const discovered = await scanSkillDirectory(rt, scanDir);
-      return { success: true, output: `Scanned ${scanDir}: found and registered ${discovered} skills` };
+      const discovered = await rt.registry.scan([scanDir]);
+      return { success: true, output: `Scanned ${scanDir}: found and registered ${discovered.length} skills` };
     }
 
-    if (cmd === 'skill' && subcmd === 'search') {
-      const query = rest.join(' ');
-      if (!query) return { success: false, output: 'Usage: agy skill search <query>' };
-      const matches = searchSkills(rt.registry.listAll(), query);
-      return {
-        success: true,
-        output: matches.length === 0 ? `No skills match '${query}'` : [
-          `=== Skill Search (${matches.length}) ===`,
-          ...matches.map((skill) => `${skill.id}@${skill.version} — ${skill.description}\n  consumes: ${skill.consumes.join(', ') || 'none'}\n  produces: ${skill.produces.join(', ') || 'none'}\n  permissions: ${permissions(skill)}`),
-        ].join('\n'),
-      };
-    }
-
-    if (cmd === 'skill' && subcmd === 'inspect') {
-      const skill = rt.registry.getActiveVersion(rest[0] || '');
-      if (!skill) return { success: false, output: `Skill not found: ${rest[0] || '(missing id)'}` };
-      return {
-        success: true,
-        output: [`${skill.id}@${skill.version} — ${skill.name}`, `Description: ${skill.description}`, `Consumes: ${skill.consumes.join(', ') || 'none'}`, `Produces: ${skill.produces.join(', ') || 'none'}`, `Permissions: ${permissions(skill)}`, `Capabilities: ${skill.capabilities.join(', ') || 'none'}`, `Entry point: ${skill.entryPoint}`, `Confidence: ${skill.confidenceThreshold}`].join('\n'),
-      };
-    }
-
-    if (cmd === 'skill' && subcmd === 'validate') {
-      if (!rest[0]) return { success: false, output: 'Usage: agy skill validate <directory>' };
-      const validation = validateSkillDirectory(rest[0]);
-      return { success: !validation.lines.some((line) => line.startsWith('FAIL')), output: [...validation.lines, `Score: ${validation.score}/100`].join('\n') };
-    }
-
-    if (cmd === 'skill' && subcmd === 'rank') {
-      const flag = rest.indexOf('--produces');
-      const artifact = flag >= 0 ? rest[flag + 1] : undefined;
-      if (!artifact) return { success: false, output: 'Usage: agy skill rank --produces <artifact>' };
-      const ranked = rankSkills(rt.registry.listAll(), artifact, rt.skillPaths);
-      return {
-        success: true,
-        output: ranked.length === 0 ? `No skills produce ${artifact}` : [
-          `=== Skill Rank for ${artifact} ===`,
-          ...ranked.map((item) => `${item.score} ${item.manifest.id}@${item.manifest.version} — ${item.reasons.join('; ')}`),
-        ].join('\n'),
-      };
-    }
-
-    if (cmd === 'skill' && subcmd === 'paths') {
-      const [fromArtifact, toArtifact] = rest;
-      if (!fromArtifact || !toArtifact) return { success: false, output: 'Usage: agy skill paths <from-artifact> <to-artifact>' };
-      const paths = findArtifactPaths(rt.registry.listAll(), fromArtifact, toArtifact);
-      return {
-        success: true,
-        output: paths.length === 0 ? `No artifact path from ${fromArtifact} to ${toArtifact}` : paths.map((steps) => [fromArtifact, ...steps.flatMap((step) => [step.skillId, step.outputArtifact])].join(' -> ')).join('\n'),
-      };
-    }
-
-    if (cmd === 'artifact' && subcmd === 'inspect') {
-      const hash = rest[0] as import('@agy/shared').Hash | undefined;
-      if (!hash) return { success: false, output: 'Usage: agy artifact inspect <hash>' };
-      const envelope = await rt.store.getEnvelope(hash);
-      if (!envelope) return { success: false, output: `Artifact not found: ${hash}` };
-      const content = await rt.store.get(hash);
-      const preview = content && (envelope.mimeType.includes('json') || envelope.mimeType.startsWith('text/')) ? content.toString('utf8').slice(0, 500) : '<binary>';
-      return { success: true, output: [`Hash: ${envelope.hash}`, `Size: ${envelope.size}`, `MIME: ${envelope.mimeType}`, `Created By: ${envelope.createdBy.id}@${envelope.createdBy.version}`, `Created At: ${new Date(envelope.createdAt).toISOString()}`, `Metadata: ${JSON.stringify(envelope.metadata)}`, `Preview: ${preview}`].join('\n') };
-    }
-
-    if (cmd === 'run' || (cmd === 'goal' && subcmd === 'run')) {
-      const goalDesc = cmd === 'run' ? (subcmd || 'default-goal') : (rest[0] || 'default-goal');
-      const requiredArtifact = cmd === 'run' ? (rest[0] || 'DefaultArtifact') : (rest[1] || 'DefaultArtifact');
+    if (cmd === 'run') {
+      const goalDesc = subcmd || 'default-goal';
+      const requiredArtifact = rest[0] || 'DefaultArtifact';
 
       const resResult = await rt.resolver.resolve(
         {
@@ -320,7 +205,6 @@ export async function handleCliCommand(
       }
 
       await rt.scheduler.submit(resResult.plan);
-
 
       // The scheduler is pull-based: advance until the plan reaches a terminal
       // state. Reporting success after a single tick left multi-node plans
@@ -346,34 +230,13 @@ export async function handleCliCommand(
       };
     }
 
-    if (!cmd || cmd === 'help' || cmd === '--help' || cmd === '-h') {
-      return {
-        success: true,
-        output: [
-          'AGY Skill Hunt CLI v1',
-          'Usage: agy <command> [options]',
-          '',
-          'Commands:',
-          '  init                                 Initialize local AGY workspace',
-          '  status                               Show kernel and subsystem status',
-          '  registry scan [dir]                  Scan directory for skills and register them',
-          '  skill list                           List all registered skills',
-          '  skill scan [dir]                     Alias for registry scan',
-          '  skill search <query>                 Search skills by keyword',
-          '  skill inspect <skill-id>             Show detailed skill card',
-          '  skill validate <directory>           Validate a skill directory',
-          '  skill rank --produces <artifact>     Rank skills that produce an artifact',
-          '  skill paths <from-art> <to-art>      Find compatibility paths between artifacts',
-          '  goal run <goal> <artifact>           Run a goal to produce an artifact',
-          '  run <goal> <artifact>                Alias for goal run',
-          '  artifact inspect <hash>              Inspect a stored artifact'
-        ].join('\n')
-      };
+    if (cmd === 'skillopt') {
+      return await handleSkillOptCli([subcmd, ...rest]);
     }
 
     return {
       success: false,
-      output: `Unknown command: ${args.join(' ')}. Run 'agy help' for available commands.`,
+      output: `Unknown command: ${args.join(' ')}. Available commands: status, skill list, skill scan [dir], skill install <json>, run <goal> <artifact>, skillopt <cmd>`,
     };
   } finally {
     if (!runtime) {

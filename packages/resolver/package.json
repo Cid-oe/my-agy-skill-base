@@ -5,7 +5,6 @@
   "types": "dist/index.d.ts",
   "dependencies": {
     "@agy/shared": "*",
-    "@agy/kernel": "*",
     "@agy/registry": "*"
   },
   "scripts": {

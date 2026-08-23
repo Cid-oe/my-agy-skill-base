@@ -4,8 +4,6 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "dependencies": {
-    "@agy/shared": "*",
-    "@agy/kernel": "*",
     "@agy/cli": "*"
   },
   "scripts": {
