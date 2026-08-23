@@ -148,10 +148,24 @@ export class Executor implements IExecutor {
             }
           }
         }
+        // Resolve input artifacts (from upstream nodes) so the skill can
+        // consume upstream outputs. Content is read from the artifact store and
+        // passed as utf-8 strings (artifacts are JSON-serialized results).
+        const inputs: Array<{ hash: string; size: number; data: string }> = [];
+        if (this._artifactStore && task.inputs && task.inputs.length > 0) {
+          for (const envelope of task.inputs) {
+            const buf = await this._artifactStore.get(envelope.hash);
+            if (buf) {
+              inputs.push({ hash: envelope.hash, size: envelope.size, data: buf.toString('utf-8') });
+            }
+          }
+        }
+
         const ctxArg = {
           taskId: task.taskId,
           planId: task.planId,
           leaseId: task.lease.leaseId,
+          inputs,
         };
 
         let resultPayload: unknown;

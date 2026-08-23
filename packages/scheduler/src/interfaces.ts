@@ -3,10 +3,15 @@
  * Strictly implements Phase 3 (IScheduler), RFC-0007, and RFC-0007a.
  */
 
-import { ExecutionPlan, PlanNode, SubsystemHealth, TaskContext, UUID } from '@agy/shared';
+import { ExecutionPlan, ExecutionResult, PlanNode, SubsystemHealth, TaskContext, UUID } from '@agy/shared';
 import { ISubsystem } from '@agy/shared';
 
-export type TaskDispatcher = (task: TaskContext, node: PlanNode) => Promise<void>;
+/**
+ * A task dispatcher runs a plan node. It may return the ExecutionResult so the
+ * scheduler can capture output artifacts and pass them to downstream nodes
+ * (input-artifact passing). Returning void is still allowed for simple dispatchers.
+ */
+export type TaskDispatcher = (task: TaskContext, node: PlanNode) => Promise<ExecutionResult | void>;
 
 export interface IScheduler extends ISubsystem {
   submit(plan: ExecutionPlan): Promise<UUID>;

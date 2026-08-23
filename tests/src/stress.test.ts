@@ -30,7 +30,7 @@ test('Stress: many concurrent 2-node plans complete with no worker-slot leaks', 
       .update(JSON.stringify({ skillId: 'echo-skill', report: 'EchoReport', sum: 4950 }))
       .digest('hex');
     const summaryHash = crypto.createHash('sha256')
-      .update(JSON.stringify({ skillId: 'summary-skill', report: 'Summary', total: 9900 }))
+      .update(JSON.stringify({ skillId: 'summary-skill', report: 'Summary', echoSum: 4950, doubled: 9900 }))
       .digest('hex');
 
     const planIds: string[] = [];
