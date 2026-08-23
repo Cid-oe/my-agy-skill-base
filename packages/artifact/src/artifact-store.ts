@@ -22,6 +22,8 @@ export interface ArtifactStoreOptions {
   eventBus?: IEventBus;
   /** When set, blobs and the envelope index are persisted to this directory (durable CAS). */
   persistenceDir?: string;
+  /** Durable mode: compact the index journal into a snapshot every N mutations (default 200). */
+  indexSnapshotInterval?: number;
 }
 
 export class ArtifactStore implements IArtifactStore {
@@ -34,10 +36,13 @@ export class ArtifactStore implements IArtifactStore {
   private _bootTime = 0;
   private _eventBus?: IEventBus;
   private _persistenceDir?: string;
+  private _mutationsSinceSnapshot = 0;
+  private readonly _indexSnapshotInterval: number;
 
   constructor(options: ArtifactStoreOptions = {}) {
     this._eventBus = options.eventBus;
     this._persistenceDir = options.persistenceDir;
+    this._indexSnapshotInterval = options.indexSnapshotInterval ?? 200;
   }
 
   public async boot(): Promise<void> {
@@ -53,6 +58,10 @@ export class ArtifactStore implements IArtifactStore {
   }
 
   public async shutdown(): Promise<void> {
+    // Flush the durable index: snapshot so the next boot needn't replay a long journal.
+    if (this._persistenceDir) {
+      this.snapshotIndex();
+    }
     this._isReady = false;
   }
 
@@ -94,7 +103,7 @@ export class ArtifactStore implements IArtifactStore {
     if (this._envelopes.has(hash)) {
       const existing = this._envelopes.get(hash)!;
       existing.refCount++;
-      this.persistIndex();
+      this.journal({ op: 'env', env: { ...existing } });
       return { ...existing };
     }
 
@@ -114,7 +123,7 @@ export class ArtifactStore implements IArtifactStore {
       this._blobs.set(hash, buffer);
     }
     this._envelopes.set(hash, envelope);
-    this.persistIndex();
+    this.journal({ op: 'env', env: { ...envelope } });
 
     if (this._eventBus) {
       await this._eventBus.publish('artifact.created', {
@@ -168,7 +177,7 @@ export class ArtifactStore implements IArtifactStore {
         fs.rmSync(tempFile, { force: true });
         const existing = this._envelopes.get(hash)!;
         existing.refCount++;
-        this.persistIndex();
+        this.journal({ op: 'env', env: { ...existing } });
         return { ...existing };
       }
 
@@ -186,7 +195,7 @@ export class ArtifactStore implements IArtifactStore {
         metadata,
       };
       this._envelopes.set(hash, envelope);
-      this.persistIndex();
+      this.journal({ op: 'env', env: { ...envelope } });
       return { ...envelope };
     }
 
@@ -250,19 +259,19 @@ export class ArtifactStore implements IArtifactStore {
       });
     }
     this._pinned.add(hash);
-    this.persistIndex();
+    this.journal({ op: 'pin', hash });
   }
 
   public async unpin(hash: Hash): Promise<void> {
     this._pinned.delete(hash);
-    this.persistIndex();
+    this.journal({ op: 'unpin', hash });
   }
 
   public async incrementRefCount(hash: Hash): Promise<number> {
     const envelope = this._envelopes.get(hash);
     if (!envelope) return 0;
     envelope.refCount++;
-    this.persistIndex();
+    this.journal({ op: 'env', env: { ...envelope } });
     return envelope.refCount;
   }
 
@@ -272,7 +281,7 @@ export class ArtifactStore implements IArtifactStore {
     if (envelope.refCount > 0) {
       envelope.refCount--;
     }
-    this.persistIndex();
+    this.journal({ op: 'env', env: { ...envelope } });
     return envelope.refCount;
   }
 
@@ -290,10 +299,10 @@ export class ArtifactStore implements IArtifactStore {
           this._blobs.delete(hash);
         }
         this._envelopes.delete(hash);
+        this.journal({ op: 'del', hash });
       }
     }
 
-    this.persistIndex();
     return { reclaimedBytes, deletedCount };
   }
 
@@ -319,7 +328,27 @@ export class ArtifactStore implements IArtifactStore {
     }
   }
 
-  private persistIndex(): void {
+  /**
+   * Append a single mutation to the index journal (O(1) per mutation) and
+   * periodically compact into a fresh index.json snapshot, avoiding the
+   * previous O(n) full-index rewrite on every put/pin/refcount change.
+   */
+  private journal(record: object): void {
+    if (!this._persistenceDir) return;
+    const logFile = path.join(this._persistenceDir, 'index.log');
+    const fd = fs.openSync(logFile, 'a');
+    try {
+      fs.writeSync(fd, JSON.stringify(record) + '\n');
+    } finally {
+      fs.closeSync(fd);
+    }
+    this._mutationsSinceSnapshot++;
+    if (this._mutationsSinceSnapshot >= this._indexSnapshotInterval) {
+      this.snapshotIndex();
+    }
+  }
+
+  private snapshotIndex(): void {
     if (!this._persistenceDir) return;
     const envelopes: Record<string, ArtifactEnvelope> = {};
     for (const [k, v] of this._envelopes.entries()) {
@@ -332,27 +361,67 @@ export class ArtifactStore implements IArtifactStore {
     const tmp = `${this.indexPath()}.tmp`;
     fs.writeFileSync(tmp, payload);
     fs.renameSync(tmp, this.indexPath());
+    // Truncate the journal now that the snapshot captures all state.
+    const logFile = path.join(this._persistenceDir, 'index.log');
+    const fd = fs.openSync(logFile, 'w');
+    fs.closeSync(fd);
+    this._mutationsSinceSnapshot = 0;
   }
 
   private loadIndex(): void {
+    // 1. Load the latest snapshot (if any).
     const idx = this.indexPath();
-    if (!fs.existsSync(idx)) return;
-    try {
-      const raw = JSON.parse(fs.readFileSync(idx, 'utf-8')) as {
-        envelopes: Record<string, ArtifactEnvelope>;
-        pinned?: string[];
-      };
-      for (const [k, v] of Object.entries(raw.envelopes)) {
-        // Only restore envelopes whose blob still exists on disk.
-        if (fs.existsSync(this.casPath(asHash(k)))) {
-          this._envelopes.set(asHash(k), { ...v });
+    if (fs.existsSync(idx)) {
+      try {
+        const raw = JSON.parse(fs.readFileSync(idx, 'utf-8')) as {
+          envelopes: Record<string, ArtifactEnvelope>;
+          pinned?: string[];
+        };
+        for (const [k, v] of Object.entries(raw.envelopes)) {
+          if (fs.existsSync(this.casPath(asHash(k)))) {
+            this._envelopes.set(asHash(k), { ...v });
+          }
         }
+        for (const h of raw.pinned ?? []) {
+          this._pinned.add(asHash(h));
+        }
+      } catch {
+        // Corrupt snapshot: fall through to journal replay from scratch.
       }
-      for (const h of raw.pinned ?? []) {
-        this._pinned.add(asHash(h));
+    }
+
+    // 2. Replay the append-only journal on top of the snapshot.
+    const logFile = path.join(this._persistenceDir!, 'index.log');
+    if (!fs.existsSync(logFile)) return;
+    const lines = fs.readFileSync(logFile, 'utf-8').split('\n').filter((l) => l.trim().length > 0);
+    for (const line of lines) {
+      let rec: { op: string; hash?: string; env?: ArtifactEnvelope };
+      try {
+        rec = JSON.parse(line);
+      } catch {
+        continue;
       }
-    } catch {
-      // Corrupt index: start empty; blobs remain on disk for manual recovery.
+      switch (rec.op) {
+        case 'env':
+          if (rec.env && fs.existsSync(this.casPath(rec.env.hash))) {
+            this._envelopes.set(rec.env.hash, { ...rec.env });
+          }
+          break;
+        case 'pin':
+          if (rec.hash) this._pinned.add(asHash(rec.hash));
+          break;
+        case 'unpin':
+          if (rec.hash) this._pinned.delete(asHash(rec.hash));
+          break;
+        case 'del':
+          if (rec.hash) {
+            this._envelopes.delete(asHash(rec.hash));
+            this._pinned.delete(asHash(rec.hash));
+          }
+          break;
+        default:
+          break;
+      }
     }
   }
 }
