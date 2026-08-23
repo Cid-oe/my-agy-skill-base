@@ -28,6 +28,7 @@ export class SkillLoader implements ISkillLoader {
   private _eventBus?: IEventBus;
   private _loadedSkills = new Map<string, LoadedSkill>();
   private _drainingSkills = new Map<string, LoadedSkill>();
+  private _drainTimers = new Map<string, NodeJS.Timeout>();
   private _isReady = false;
   private _bootTime = 0;
   public readonly drainTimeoutMs: number = 30000;
@@ -46,9 +47,16 @@ export class SkillLoader implements ISkillLoader {
   }
 
   public async shutdown(): Promise<void> {
-    for (const [id] of Array.from(this._loadedSkills.entries())) {
-      await this.unload(id);
+    // Dispose loaded skills immediately and cancel any pending drain timers.
+    for (const [, skill] of Array.from(this._loadedSkills.entries())) {
+      await skill.dispose();
     }
+    this._loadedSkills.clear();
+    for (const [, skill] of Array.from(this._drainingSkills.entries())) {
+      await skill.dispose();
+    }
+    this._drainingSkills.clear();
+    this.clearDrainTimers();
     this._isReady = false;
   }
 
@@ -94,16 +102,24 @@ export class SkillLoader implements ISkillLoader {
       lifecycleState: 'loaded',
     };
 
+    // Resolve an executable module path. A skill with a resolvable modulePath
+    // is executed by the executor in an isolated worker (SRC-1/2/3). A skill
+    // without one is declarative and uses the in-process passthrough below.
+    const modulePath = manifest.modulePath;
+
     const loadedSkill: LoadedSkill = {
       manifest,
       handle,
       refCount: 1,
+      modulePath,
+      // Declarative passthrough for skills that ship no executable module.
+      // Module-backed skills bypass this via the executor's worker path.
       execute: async (ctx: Record<string, unknown>) => {
         return {
           skillId: manifest.id,
           executedAt: Date.now(),
-          output: `Execution output from ${manifest.name}`,
-          context: ctx,
+          declarative: true,
+          echoed: ctx,
         };
       },
       dispose: async () => {
@@ -150,6 +166,7 @@ export class SkillLoader implements ISkillLoader {
     if (instance.handle.lifecycleState === 'draining' && instance.refCount <= 0) {
       await instance.dispose();
       this._drainingSkills.delete(instance.manifest.id);
+      this.clearDrainTimer(instance.manifest.id);
     }
   }
 
@@ -162,6 +179,9 @@ export class SkillLoader implements ISkillLoader {
     if (loaded.refCount > 0) {
       loaded.handle.lifecycleState = 'draining';
       this._drainingSkills.set(id, loaded);
+      // RFC-0002a drain: let in-flight references finish, but bound it by
+      // drainTimeoutMs via a background timer (non-blocking) (SRC-18).
+      this.scheduleDrain(id);
     } else {
       await loaded.dispose();
     }
@@ -177,6 +197,45 @@ export class SkillLoader implements ISkillLoader {
     }
 
     return true;
+  }
+
+  /**
+   * Schedule a background forced disposal of a draining skill after
+   * drainTimeoutMs. If in-flight references release first, `release` disposes
+   * it and clears the timer. This makes the drain timeout enforceable without
+   * blocking callers.
+   */
+  private scheduleDrain(id: string): void {
+    const existing = this._drainTimers.get(id);
+    if (existing) {
+      clearTimeout(existing);
+    }
+    const timer = setTimeout(() => {
+      this._drainTimers.delete(id);
+      const skill = this._drainingSkills.get(id);
+      if (skill) {
+        void skill.dispose();
+        this._drainingSkills.delete(id);
+      }
+    }, this.drainTimeoutMs);
+    // Don't keep the event loop alive solely for a drain deadline.
+    timer.unref?.();
+    this._drainTimers.set(id, timer);
+  }
+
+  private clearDrainTimer(id: string): void {
+    const timer = this._drainTimers.get(id);
+    if (timer) {
+      clearTimeout(timer);
+      this._drainTimers.delete(id);
+    }
+  }
+
+  private clearDrainTimers(): void {
+    for (const timer of this._drainTimers.values()) {
+      clearTimeout(timer);
+    }
+    this._drainTimers.clear();
   }
 
   public async reload(id: string): Promise<LoadedSkill> {

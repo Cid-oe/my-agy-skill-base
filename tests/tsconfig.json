@@ -30,6 +30,7 @@
     { "path": "../packages/resolver" },
     { "path": "../packages/scheduler" },
     { "path": "../packages/executor" },
-    { "path": "../packages/testkit" }
+    { "path": "../packages/testkit" },
+    { "path": "../apps/cli" }
   ]
 }

@@ -10,6 +10,7 @@ import {
   PlanEdge,
   PlanNode,
   Predicate,
+  SemVer,
   SkillManifest,
   SubsystemHealth,
   UUID,
@@ -220,41 +221,84 @@ export class SkillResolver implements ISkillResolver {
     return null;
   }
 
+  /**
+   * Detect cycles in the resolved skill dependency graph using Tarjan's
+   * strongly-connected-components algorithm (SRC-10). Returns a node-id path
+   * describing the first cyclic SCC, or null if the graph is acyclic.
+   */
   private detectCycle(skills: SkillManifest[]): string[] | null {
     const adj = new Map<string, string[]>();
+    const nodes = new Set<string>();
     for (const s of skills) {
-      adj.set(s.id, s.requires ? [...s.requires] : []);
+      nodes.add(s.id);
+      const deps = (s.requires ? [...s.requires] : []).filter((r) => skills.some((x) => x.id === r));
+      adj.set(s.id, deps);
     }
 
-    const visited = new Set<string>();
-    const recStack = new Set<string>();
-    const path: string[] = [];
+    let index = 0;
+    const stack: string[] = [];
+    const onStack = new Set<string>();
+    const indices = new Map<string, number>();
+    const lowlinks = new Map<string, number>();
+    let cyclic: string[] | null = null;
 
-    const dfs = (node: string): boolean => {
-      visited.add(node);
-      recStack.add(node);
-      path.push(node);
+    const strongConnect = (v: string): void => {
+      indices.set(v, index);
+      lowlinks.set(v, index);
+      index++;
+      stack.push(v);
+      onStack.add(v);
 
-      const neighbors = adj.get(node) || [];
-      for (const neighbor of neighbors) {
-        if (!visited.has(neighbor)) {
-          if (dfs(neighbor)) return true;
-        } else if (recStack.has(neighbor)) {
-          path.push(neighbor);
-          return true;
+      for (const w of adj.get(v) ?? []) {
+        if (!indices.has(w)) {
+          strongConnect(w);
+          lowlinks.set(v, Math.min(lowlinks.get(v)!, lowlinks.get(w)!));
+        } else if (onStack.has(w)) {
+          lowlinks.set(v, Math.min(lowlinks.get(v)!, indices.get(w)!));
         }
       }
 
-      path.pop();
-      recStack.delete(node);
-      return false;
+      if (lowlinks.get(v) === indices.get(v)) {
+        // Root of an SCC: pop until v.
+        const component: string[] = [];
+        let w: string;
+        do {
+          w = stack.pop()!;
+          onStack.delete(w);
+          component.push(w);
+        } while (w !== v);
+
+        const selfLoop = component.length === 1 && (adj.get(component[0]) ?? []).includes(component[0]);
+        if (component.length > 1 || selfLoop) {
+          cyclic = reconstructCycle(component, adj);
+        }
+      }
     };
 
-    for (const s of skills) {
-      if (!visited.has(s.id)) {
-        if (dfs(s.id)) {
-          return path;
-        }
+    // Reconstruct an explicit cycle path within a cyclic SCC.
+    const reconstructCycle = (component: string[], adjacency: Map<string, string[]>): string[] => {
+      const inComp = new Set(component);
+      const start = component[0];
+      const path: string[] = [start];
+      const seen = new Set<string>([start]);
+      let current = start;
+      // Walk edges that stay inside the component until we return to start.
+      for (let i = 0; i < component.length; i++) {
+        const next = (adjacency.get(current) ?? []).find((n) => inComp.has(n));
+        if (!next) break;
+        path.push(next);
+        if (next === start) break;
+        if (seen.has(next)) break;
+        seen.add(next);
+        current = next;
+      }
+      return path;
+    };
+
+    for (const n of nodes) {
+      if (!indices.has(n)) {
+        strongConnect(n);
+        if (cyclic) return cyclic;
       }
     }
 
@@ -274,7 +318,8 @@ export class SkillResolver implements ISkillResolver {
   public async reresolve(
     plan: ExecutionPlan,
     failedNodeId: UUID,
-    _state: ResolverRuntimeState = {}
+    _state: ResolverRuntimeState = {},
+    registry?: ISkillRegistry
   ): Promise<ResolutionResult> {
     // Return immutable deep clone with substitution
     const targetNode = plan.nodes.find((n) => n.nodeId === failedNodeId);
@@ -297,6 +342,24 @@ export class SkillResolver implements ISkillResolver {
     }
 
     const nextSkillId = targetNode.fallbackChain[0];
+
+    // Validate the fallback skill exists and resolve its version before
+    // substituting (SRC-12). Without a registry the substitution is preserved
+    // for backwards compatibility but cannot be validated.
+    let nextVersion: string | undefined;
+    if (registry) {
+      const fallbackManifest = registry.getActiveVersion(nextSkillId);
+      if (!fallbackManifest) {
+        return {
+          status: 'unresolvable',
+          plan: null,
+          unresolvedSlots: [nextSkillId],
+          diagnostics: [`Fallback skill ${nextSkillId} is not registered`],
+        };
+      }
+      nextVersion = fallbackManifest.version;
+    }
+
     const newNodes: PlanNode[] = plan.nodes.map((n) => {
       if (n.nodeId === failedNodeId) {
         return {
@@ -304,6 +367,8 @@ export class SkillResolver implements ISkillResolver {
           skillRef: {
             ...n.skillRef,
             id: nextSkillId,
+            ...(nextVersion ? { version: nextVersion as SemVer } : {}),
+            registryRef: `registry://${nextSkillId}@${nextVersion ?? n.skillRef.version}`,
           },
           selectionReason: `Fallback escalation from failed execution`,
           fallbackChain: n.fallbackChain ? n.fallbackChain.slice(1) : [],
@@ -418,17 +483,41 @@ export class SkillResolver implements ISkillResolver {
         selectionReason: `Selected via highest priority ranking`,
         confidenceThreshold: s.confidenceThreshold,
         fallbackChain: fallbackMap.get(s.id) || [],
+        requiredCapabilities: s.permissions ? [...s.permissions] : [],
+        priority: s.priority,
       };
     });
 
     const edges: PlanEdge[] = [];
+
+    // Index which skill (in this plan) produces each artifact, so consumed
+    // artifacts can be wired as data dependencies (SRC-11).
+    const producesIndex = new Map<string, string>();
     for (const s of skills) {
+      for (const produced of s.produces ?? []) {
+        producesIndex.set(produced, s.id);
+      }
+    }
+
+    for (const s of skills) {
+      // ordering edges from declared skill requirements
       if (s.requires) {
         for (const req of s.requires) {
           const fromId = skillToNodeId.get(req);
           const toId = skillToNodeId.get(s.id);
           if (fromId && toId) {
             edges.push({ fromNodeId: fromId, toNodeId: toId, kind: 'ordering' });
+          }
+        }
+      }
+      // data edges from consumed artifacts produced by another plan skill
+      for (const consumed of s.consumes ?? []) {
+        const producerSkillId = producesIndex.get(consumed);
+        if (producerSkillId && producerSkillId !== s.id) {
+          const fromId = skillToNodeId.get(producerSkillId);
+          const toId = skillToNodeId.get(s.id);
+          if (fromId && toId) {
+            edges.push({ fromNodeId: fromId, toNodeId: toId, kind: 'data' });
           }
         }
       }

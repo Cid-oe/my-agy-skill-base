@@ -130,11 +130,18 @@ export class Kernel implements IKernel {
     // Parallelized health checks with individual timeout guards (RFC-0015)
     const healthPromises = this._subsystems.map(async (subsystem) => {
       try {
-        const timeoutPromise = new Promise<SubsystemHealth>((_, reject) =>
-          setTimeout(() => reject(new Error(`Health check timeout for ${subsystem.name}`)), 2000)
-        );
-        const health = await Promise.race([subsystem.health(), timeoutPromise]);
-        return { name: subsystem.name, health };
+        let timer: NodeJS.Timeout | undefined;
+        const timeoutPromise = new Promise<SubsystemHealth>((_, reject) => {
+          timer = setTimeout(() => reject(new Error(`Health check timeout for ${subsystem.name}`)), 2000);
+        });
+        try {
+          const health = await Promise.race([subsystem.health(), timeoutPromise]);
+          return { name: subsystem.name, health };
+        } finally {
+          // Always clear the timer so resolved-fast health checks don't leave a
+          // pending 2s handle per subsystem (SRC-19).
+          if (timer) clearTimeout(timer);
+        }
       } catch (err) {
         return {
           name: subsystem.name,

@@ -48,7 +48,8 @@ export interface ISkillResolver extends ISubsystem {
   reresolve(
     plan: ExecutionPlan,
     failedNodeId: UUID,
-    state?: ResolverRuntimeState
+    state?: ResolverRuntimeState,
+    registry?: ISkillRegistry
   ): Promise<ResolutionResult>;
   health(): Promise<SubsystemHealth> | SubsystemHealth;
 }

@@ -28,6 +28,8 @@
     { "path": "../kernel" },
     { "path": "../event-bus" },
     { "path": "../registry" },
-    { "path": "../artifact" }
+    { "path": "../artifact" },
+    { "path": "../policy" },
+    { "path": "../runtime-state" }
   ]
 }

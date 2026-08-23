@@ -75,6 +75,13 @@ export interface SkillManifest {
   checksum?: Hash;
   signature?: string | null;
   metadata?: Record<string, unknown>;
+  /**
+   * Absolute path to the skill's executable module (ESM .mjs or CJS). When
+   * present, the executor runs the skill's exported `execute(ctx)` inside an
+   * isolated worker thread (SRC-1/2/3). When absent, the skill is treated as
+   * declarative and runs an in-process passthrough handler.
+   */
+  modulePath?: string;
 }
 
 export interface SkillHandle {
@@ -111,6 +118,14 @@ export interface PlanNode {
   selectionReason?: string;
   fallbackChain?: string[];
   confidenceThreshold?: number;
+  /**
+   * Capabilities the skill declares it requires (mirrors manifest.permissions).
+   * Populated by the resolver so the scheduler can mint an appropriately-scoped
+   * lease and the executor can enforce it (SRC-5).
+   */
+  requiredCapabilities?: Capability[];
+  /** Skill manifest priority, used by the scheduler for dispatch ordering. */
+  priority?: 'critical' | 'high' | 'medium' | 'low';
 }
 
 export interface PlanEdge {

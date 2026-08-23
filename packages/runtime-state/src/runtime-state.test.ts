@@ -163,3 +163,73 @@ test('RuntimeState persists WAL and replays state on reboot after crash', async 
   }
 });
 
+test('RuntimeState checkpoints and compacts the WAL to bound growth (EX-5)', async () => {
+  const os = await import('node:os');
+  const nodePath = await import('node:path');
+  const fs = await import('node:fs');
+  const tempDir = fs.mkdtempSync(nodePath.join(os.tmpdir(), 'agy-wal-compact-'));
+
+  try {
+    // Checkpoint every 2 committed commands.
+    const state = new RuntimeState({ persistenceDir: tempDir, checkpointIntervalCommands: 2 });
+    await state.boot();
+
+    for (let i = 0; i < 10; i++) {
+      await state.trackPlan(asUUID(`cp-plan-${i}`));
+    }
+
+    const walFile = nodePath.join(tempDir, 'wal', 'current.wal');
+    const snapshotFile = nodePath.join(tempDir, 'wal', 'snapshot.json');
+
+    // A snapshot must exist and the WAL must have been compacted (small).
+    assert.strictEqual(fs.existsSync(snapshotFile), true, 'snapshot.json should exist after checkpoint');
+    const walRecords = fs.readFileSync(walFile, 'utf-8').split('\n').filter((l) => l.trim().length > 0);
+    assert.ok(walRecords.length < 10, `WAL should be compacted, got ${walRecords.length} records`);
+
+    // Reboot must restore full state (10 plans) from snapshot + residual WAL.
+    const state2 = new RuntimeState({ persistenceDir: tempDir, checkpointIntervalCommands: 2 });
+    await state2.boot();
+    const snap = state2.getSnapshot();
+    assert.strictEqual(snap.version, 10);
+    assert.strictEqual(snap.activePlans.length, 10);
+
+    await state.shutdown();
+    await state2.shutdown();
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('RuntimeState WAL records carry a CRC and replay halts on corruption (SRC-13)', async () => {
+  const os = await import('node:os');
+  const nodePath = await import('node:path');
+  const fs = await import('node:fs');
+  const tempDir = fs.mkdtempSync(nodePath.join(os.tmpdir(), 'agy-wal-crc-'));
+
+  try {
+    const state = new RuntimeState({ persistenceDir: tempDir, checkpointIntervalCommands: 1000 });
+    await state.boot();
+    await state.trackPlan(asUUID('crc-plan-1'));
+    await state.trackPlan(asUUID('crc-plan-2'));
+    await state.shutdown();
+
+    // Corrupt the second WAL record's commands so its CRC no longer matches.
+    const walFile = nodePath.join(tempDir, 'wal', 'current.wal');
+    const lines = fs.readFileSync(walFile, 'utf-8').split('\n').filter((l) => l.trim().length > 0);
+    const first = JSON.parse(lines[0]) as { crc: number; commands: unknown[] };
+    assert.strictEqual(typeof first.crc, 'number', 'WAL record must carry a numeric crc');
+    // Rewrite with a tampered commands array (crc unchanged -> mismatch).
+    const tampered = { ...first, commands: [{ type: 'TRACK_PLAN', payload: { planId: 'tampered-plan' } }] };
+    fs.writeFileSync(walFile, `${JSON.stringify(tampered)}\n${lines.slice(1).join('\n')}\n`);
+
+    const state2 = new RuntimeState({ persistenceDir: tempDir, checkpointIntervalCommands: 1000 });
+    await state2.boot();
+    // Replay must stop at the corrupt record: tampered-plan must NOT be present.
+    const snap = state2.getSnapshot();
+    assert.strictEqual(snap.activePlans.includes('tampered-plan' as any), false);
+    await state2.shutdown();
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+

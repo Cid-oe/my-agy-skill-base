@@ -2,23 +2,33 @@ import { test } from 'node:test';
 import assert from 'node:assert';
 import { Kernel } from './kernel.js';
 import { ISubsystem } from './interfaces.js';
-import { SubsystemHealth } from '@agy/shared';
+import { SubsystemHealth, UUID, asUUID } from '@agy/shared';
 
 class MockSubsystem implements ISubsystem {
   public booted = false;
   public shutDown = false;
-  constructor(public readonly name: string) {}
+  public readonly id: UUID;
+  constructor(name: string) {
+    this.name = name;
+    this.id = asUUID(`mock-${name}`);
+  }
+  public readonly name: string;
 
   async boot(): Promise<void> {
     this.booted = true;
   }
+  async start(): Promise<void> { await this.boot(); }
 
   async shutdown(): Promise<void> {
     this.shutDown = true;
   }
+  async stop(): Promise<void> { await this.shutdown(); }
 
   health(): SubsystemHealth | Promise<SubsystemHealth> {
     return { status: 'healthy', uptimeMs: 100 };
+  }
+  async getHealth(): Promise<SubsystemHealth> {
+    return this.health();
   }
 }
 
@@ -79,6 +89,30 @@ test('Kernel rolls back booted subsystems in reverse order on boot failure', asy
   assert.strictEqual(kernel.state, 'shutdown');
   assert.strictEqual(sub1.booted, true);
   assert.strictEqual(sub1.shutDown, true); // Rolled back cleanly!
+});
+
+test('Kernel clears health-check timeout timers after resolution (SRC-19)', async () => {
+  const kernel = new Kernel();
+  kernel.registerSubsystem(new MockSubsystem('fast'));
+
+  await kernel.boot();
+
+  // Count long-lived (~2s) timeout handles before and after a health() call.
+  const longTimeouts = (): number =>
+    (process as unknown as { _getActiveHandles?: () => Array<{ _idleTimeout?: number }> })
+      ._getActiveHandles?.()
+      .filter((h) => h && typeof h._idleTimeout === 'number' && h._idleTimeout >= 1900)
+      .length ?? 0;
+
+  const before = longTimeouts();
+  await kernel.health();
+  // Let pending microtasks settle before re-checking active handles.
+  await new Promise((resolve) => setImmediate(resolve));
+  const after = longTimeouts();
+
+  assert.strictEqual(after, before, 'health() must not leave a pending 2s timeout handle');
+
+  await kernel.shutdown();
 });
 
 test('Kernel handles hanging subsystem health checks gracefully', async () => {

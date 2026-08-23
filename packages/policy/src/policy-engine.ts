@@ -5,6 +5,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import * as path from 'node:path';
 import { Capability, Lease, PolicyDecision, PolicyRequest, SubsystemHealth, UUID, asUUID, AgyError } from '@agy/shared';
 import { IRuntimeState } from '@agy/runtime-state';
 import { IPolicy, IPolicyEngine } from './interfaces.js';
@@ -151,15 +152,36 @@ export class PolicyEngine implements IPolicyEngine {
     // Check capability matching with scope normalization and subpath containment
     return lease.capabilities.some((c) => {
       if (c.name !== requestedCapability.name) return false;
-      if (c.scope === '*' || c.scope === requestedCapability.scope) return true;
-
-      // Subpath containment check (e.g. /workspace/project matches /workspace/project/subfile)
-      if (c.scope && requestedCapability.scope && requestedCapability.scope.startsWith(c.scope)) {
-        return true;
-      }
-
-      return false;
+      return this.isScopeCovered(c.scope, requestedCapability.scope);
     });
+  }
+
+  /**
+   * Determines whether a granted capability scope covers the requested scope.
+   *
+   * Security-critical: must reject prefix collisions (e.g. '/data/priv' must
+   * NOT cover '/data/private') and path traversal (e.g.
+   * '/workspace/project/../../../etc/passwd' must NOT be covered by
+   * '/workspace/project'). See findings EX-3 and EX-4.
+   */
+  private isScopeCovered(granted: string, requested: string): boolean {
+    if (!granted || !requested) return false;
+    if (granted === '*') return true;
+    if (granted === requested) return true;
+
+    // Absolute path scopes: normalize to collapse '..' segments (defeating
+    // traversal) and require a directory boundary so a granted directory only
+    // covers its strict descendants.
+    if (granted.startsWith('/') && requested.startsWith('/')) {
+      const g = path.resolve(granted);
+      const r = path.resolve(requested);
+      if (r === g) return true;
+      return r.startsWith(g + path.sep);
+    }
+
+    // Generic hierarchical scopes (e.g. dotted names): require an explicit
+    // separator boundary after the granted prefix.
+    return requested.startsWith(granted + '/') || requested.startsWith(granted + '.');
   }
 
   public async revokeLease(leaseId: UUID): Promise<boolean> {

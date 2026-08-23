@@ -156,6 +156,55 @@ test('PolicyEngine validates subpath scope containment constraints', async () =>
   await state.shutdown();
 });
 
+test('PolicyEngine rejects prefix-collision and path-traversal scope bypasses (EX-3, EX-4)', async () => {
+  const state = new RuntimeState();
+  await state.boot();
+
+  const engine = new PolicyEngine({ runtimeState: state });
+  await engine.boot();
+
+  // Prefix collision: '/data/priv' must NOT cover '/data/private'
+  const collisionLease = await engine.issueLease(
+    'collision-worker',
+    [{ name: 'fs:read', scope: '/data/priv' }],
+    60000
+  );
+  const collision = await engine.validateLease(collisionLease.leaseId, {
+    name: 'fs:read',
+    scope: '/data/private',
+  });
+  assert.strictEqual(collision, false, 'prefix collision must be rejected');
+
+  // Path traversal: '/workspace/project' must NOT cover escaped paths
+  const traversalLease = await engine.issueLease(
+    'traversal-worker',
+    [{ name: 'fs:read', scope: '/workspace/project' }],
+    60000
+  );
+  const traversal = await engine.validateLease(traversalLease.leaseId, {
+    name: 'fs:read',
+    scope: '/workspace/project/../../../etc/passwd',
+  });
+  assert.strictEqual(traversal, false, 'path traversal must be rejected');
+
+  // Sibling directory must also be rejected
+  const sibling = await engine.validateLease(traversalLease.leaseId, {
+    name: 'fs:read',
+    scope: '/workspace/project-secrets',
+  });
+  assert.strictEqual(sibling, false, 'sibling prefix must be rejected');
+
+  // Legitimate deep subpath must STILL be allowed (regression guard)
+  const deep = await engine.validateLease(traversalLease.leaseId, {
+    name: 'fs:read',
+    scope: '/workspace/project/src/index.ts',
+  });
+  assert.strictEqual(deep, true, 'legitimate subpath must remain allowed');
+
+  await engine.shutdown();
+  await state.shutdown();
+});
+
 test('PolicyEngine rejects expired leases and sweeps them from state', async () => {
   const state = new RuntimeState();
   await state.boot();

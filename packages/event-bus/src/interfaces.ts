@@ -11,6 +11,14 @@ export interface EventBusOptions {
   maxRetries?: number;           // Defaults to 3
   backoffBaseMs?: number;        // Defaults to 50ms
   maxDeadLetters?: number;       // Defaults to 500
+  shutdownDrainMs?: number;      // Defaults to 5000ms; bounds shutdown drain
+}
+
+export interface EventBusStats {
+  processedCount: number;
+  errorCount: number;
+  deadLetterCount: number;
+  activeKeyQueues: number;
 }
 
 export interface IEventBus extends ISubsystem {
@@ -18,5 +26,6 @@ export interface IEventBus extends ISubsystem {
   subscribe<T = unknown>(topic: string, handler: EventHandler<T>): Subscription;
   getDeadLetterQueue(): Event[];
   clearDeadLetters(): void;
+  getStats(): EventBusStats;
   health(): Promise<SubsystemHealth> | SubsystemHealth;
 }

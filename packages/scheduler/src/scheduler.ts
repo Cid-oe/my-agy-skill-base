@@ -8,6 +8,7 @@ import { randomUUID } from 'node:crypto';
 import { ExecutionPlan, ICancellationToken, PlanNode, PlanEdge, SubsystemHealth, TaskContext, UUID, asUUID, AgyError } from '@agy/shared';
 import { IEventBus } from '@agy/event-bus';
 import { IRuntimeState } from '@agy/runtime-state';
+import { IPolicyEngine } from '@agy/policy';
 import { IScheduler, TaskDispatcher } from './interfaces.js';
 
 interface QueuedTask {
@@ -41,8 +42,22 @@ class SimpleCancellationToken implements ICancellationToken {
 export interface SchedulerOptions {
   eventBus?: IEventBus;
   runtimeState?: IRuntimeState;
+  policyEngine?: IPolicyEngine;
   agingFactorMs?: number;
+  /**
+   * Maximum nodes dispatched concurrently per tick. Defaults to Infinity (all
+   * ready nodes). When finite, ready nodes in excess wait and are ordered by
+   * manifest priority plus waiting-time aging (SRC-8, SRC-9).
+   */
+  maxConcurrentDispatch?: number;
 }
+
+const PRIORITY_WEIGHTS: Record<string, number> = {
+  critical: 1000,
+  high: 500,
+  medium: 100,
+  low: 10,
+};
 
 export class Scheduler implements IScheduler {
   public readonly id: UUID = asUUID('scheduler');
@@ -69,14 +84,21 @@ export class Scheduler implements IScheduler {
   private _isReady = false;
   private _bootTime = 0;
   private _agingFactorMs = 5000;
+  private _maxConcurrentDispatch = Infinity;
+  private _nodeEnqueueTime = new Map<UUID, number>();
   private _eventBus?: IEventBus;
   private _runtimeState?: IRuntimeState;
+  private _policyEngine?: IPolicyEngine;
 
   constructor(options: SchedulerOptions = {}) {
     this._eventBus = options.eventBus;
     this._runtimeState = options.runtimeState;
+    this._policyEngine = options.policyEngine;
     if (options.agingFactorMs) {
       this._agingFactorMs = options.agingFactorMs;
+    }
+    if (typeof options.maxConcurrentDispatch === 'number') {
+      this._maxConcurrentDispatch = options.maxConcurrentDispatch;
     }
   }
 
@@ -189,13 +211,22 @@ export class Scheduler implements IScheduler {
       }
 
       const now = Date.now();
-      const taskQueue: QueuedTask[] = readyNodes.map((node) => ({
-        taskId: asUUID(randomUUID()),
-        node,
-        planId: asUUID(planId),
-        queuedAt: plan.createdAt,
-        basePriority: node.skillRef.id.startsWith('sec') ? 500 : 100,
-      }));
+      const taskQueue: QueuedTask[] = readyNodes.map((node) => {
+        // Record per-node first-ready time so waiting-time aging is meaningful
+        // (SRC-9) instead of identical for every node in a plan.
+        if (!this._nodeEnqueueTime.has(node.nodeId)) {
+          this._nodeEnqueueTime.set(node.nodeId, now);
+        }
+        return {
+          taskId: asUUID(randomUUID()),
+          node,
+          planId: asUUID(planId),
+          queuedAt: this._nodeEnqueueTime.get(node.nodeId)!,
+          // Derive dispatch priority from the skill manifest (SRC-8) instead of
+          // the previous id.startsWith('sec') heuristic.
+          basePriority: PRIORITY_WEIGHTS[node.priority ?? 'medium'] ?? 100,
+        };
+      });
 
       taskQueue.sort((a, b) => {
         const effA = a.basePriority + (now - a.queuedAt) / this._agingFactorMs;
@@ -203,26 +234,41 @@ export class Scheduler implements IScheduler {
         return effB - effA;
       });
 
+      // Bound fan-out: dispatch at most maxConcurrentDispatch ready nodes this
+      // tick; the rest remain ready and age until a later tick.
+      const dispatchable = taskQueue.slice(0, this._maxConcurrentDispatch);
       const promises = this._inFlightPromises.get(planId) || [];
 
-      for (const item of taskQueue) {
+      for (const item of dispatchable) {
         if (item.node.state === 'running') continue;
 
         item.node.state = 'running';
         const cancellationToken = this._planTokens.get(planId) || new SimpleCancellationToken();
 
+        // When a policy engine is available, mint a real, registered lease for
+        // the node's required capabilities so the executor can enforce it
+        // (SRC-5). Otherwise fall back to an unregistered placeholder lease.
+        const ttl = item.node.limits.maxDurationMs || 60000;
+        const lease = this._policyEngine
+          ? await this._policyEngine.issueLease(
+              item.node.skillRef.id,
+              item.node.requiredCapabilities ?? [],
+              ttl
+            )
+          : {
+              leaseId: asUUID(randomUUID()),
+              subject: item.node.skillRef.id,
+              capabilities: [],
+              issuedAt: now,
+              expiresAt: now + ttl,
+              revoked: false,
+            };
+
         const taskContext: TaskContext = {
           taskId: item.taskId,
           nodeId: item.node.nodeId,
           planId: item.planId,
-          lease: {
-            leaseId: asUUID(randomUUID()),
-            subject: item.node.skillRef.id,
-            capabilities: [],
-            issuedAt: now,
-            expiresAt: now + (item.node.limits.maxDurationMs || 60000),
-            revoked: false,
-          },
+          lease,
           cancellationToken,
         };
 
@@ -271,6 +317,9 @@ export class Scheduler implements IScheduler {
     this._planTokens.delete(planId);
     this._nodeCompletion.delete(planId);
     this._inFlightPromises.delete(planId);
+    for (const nodeId of this._nodeEnqueueTime.keys()) {
+      this._nodeEnqueueTime.delete(nodeId);
+    }
   }
 
   private findReadyNodes(plan: ExecutionPlan, completed: Set<UUID>): PlanNode[] {
@@ -281,7 +330,9 @@ export class Scheduler implements IScheduler {
         continue;
       }
 
-      const incoming = plan.edges.filter((e: PlanEdge) => e.toNodeId === node.nodeId && e.kind === 'ordering');
+      const incoming = plan.edges.filter(
+        (e: PlanEdge) => e.toNodeId === node.nodeId && (e.kind === 'ordering' || e.kind === 'data')
+      );
       const satisfied = incoming.every((e: PlanEdge) => completed.has(e.fromNodeId));
 
       if (satisfied) {

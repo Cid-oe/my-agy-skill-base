@@ -1,0 +1,29 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": false,
+    "incremental": false,
+    "baseUrl": ".",
+    "paths": {
+      "@agy/shared": ["packages/shared/src/index.ts"],
+      "@agy/event-bus": ["packages/event-bus/src/index.ts"],
+      "@agy/runtime-state": ["packages/runtime-state/src/index.ts"],
+      "@agy/artifact": ["packages/artifact/src/index.ts"],
+      "@agy/policy": ["packages/policy/src/index.ts"],
+      "@agy/registry": ["packages/registry/src/index.ts"],
+      "@agy/resolver": ["packages/resolver/src/index.ts"],
+      "@agy/scheduler": ["packages/scheduler/src/index.ts"],
+      "@agy/executor": ["packages/executor/src/index.ts"],
+      "@agy/reflection": ["packages/reflection/src/index.ts"],
+      "@agy/kernel": ["packages/kernel/src/index.ts"],
+      "@agy/testkit": ["packages/testkit/src/index.ts"],
+      "@agy/cli": ["apps/cli/src/index.ts"]
+    }
+  },
+  "include": [
+    "packages/*/src/**/*.ts",
+    "apps/*/src/**/*.ts",
+    "tests/src/**/*.ts"
+  ]
+}

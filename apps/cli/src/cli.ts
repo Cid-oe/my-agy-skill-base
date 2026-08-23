@@ -13,6 +13,7 @@ import { SkillResolver } from '@agy/resolver';
 import { Scheduler } from '@agy/scheduler';
 import { Executor } from '@agy/executor';
 import { ReflectionEngine } from '@agy/reflection';
+import * as path from 'node:path';
 import { SkillManifest, TaskContext, PlanNode, SubsystemHealth } from '@agy/shared';
 
 export interface CliRuntime {
@@ -29,19 +30,39 @@ export interface CliRuntime {
   reflection: ReflectionEngine;
 }
 
-export async function createCliRuntime(): Promise<CliRuntime> {
+export interface CliRuntimeOptions {
+  /**
+   * When set, runtime state (WAL/ledgers/leases) and artifacts (CAS) are
+   * persisted under this directory and recovered on reboot. When omitted the
+   * runtime is in-memory (useful for tests and ephemeral runs).
+   */
+  persistenceDir?: string;
+}
+
+/**
+ * Default durable data directory for the operator CLI: `$AGY_HOME` or
+ * `<cwd>/.agy`. Used when handleCliCommand creates its own runtime so that
+ * interactive `agy` usage is durable by default.
+ */
+export function defaultPersistenceDir(): string {
+  return process.env.AGY_HOME ? process.env.AGY_HOME : path.resolve(process.cwd(), '.agy');
+}
+
+export async function createCliRuntime(options: CliRuntimeOptions = {}): Promise<CliRuntime> {
+  const home = options.persistenceDir;
   const kernel = new Kernel();
   const bus = new EventBus();
-  const store = new ArtifactStore({ eventBus: bus });
-  const state = new RuntimeState({ eventBus: bus });
+  const store = new ArtifactStore({ eventBus: bus, persistenceDir: home ? path.join(home, 'artifacts') : undefined });
+  const state = new RuntimeState({ eventBus: bus, persistenceDir: home ? path.join(home, 'state') : undefined });
   const policy = new PolicyEngine({ runtimeState: state });
   const registry = new SkillRegistry({ eventBus: bus });
   const loader = new SkillLoader({ registry, eventBus: bus });
   const resolver = new SkillResolver();
-  const scheduler = new Scheduler({ eventBus: bus, runtimeState: state });
+  const scheduler = new Scheduler({ eventBus: bus, runtimeState: state, policyEngine: policy });
   const executor = new Executor({
     skillLoader: loader,
     artifactStore: store,
+    policyEngine: policy,
     eventBus: bus,
   });
   const reflection = new ReflectionEngine({ runtimeState: state });
@@ -84,7 +105,9 @@ export async function handleCliCommand(
   args: string[],
   runtime?: CliRuntime
 ): Promise<{ success: boolean; output: string }> {
-  const rt = runtime || (await createCliRuntime());
+  // When no runtime is supplied (e.g. the `agy` binary), default to durable
+  // persistence so operator sessions survive restarts.
+  const rt = runtime || (await createCliRuntime({ persistenceDir: defaultPersistenceDir() }));
   const [cmd, subcmd, ...rest] = args;
 
   try {
@@ -155,11 +178,28 @@ export async function handleCliCommand(
       }
 
       await rt.scheduler.submit(resResult.plan);
-      await rt.scheduler.tick();
+
+      // The scheduler is pull-based: advance until the plan reaches a terminal
+      // state. Reporting success after a single tick left multi-node plans
+      // silently incomplete (EX-2).
+      let status = rt.scheduler.getPlanStatus(resResult.plan.planId);
+      let guard = 0;
+      while (status === 'running' && guard < 100000) {
+        await rt.scheduler.tick();
+        status = rt.scheduler.getPlanStatus(resResult.plan.planId);
+        guard++;
+      }
+
+      if (status !== 'completed') {
+        return {
+          success: false,
+          output: `Plan ${resResult.plan.planId} for goal '${goalDesc}' did not complete (status: ${status})`,
+        };
+      }
 
       return {
         success: true,
-        output: `Executed plan ${resResult.plan.planId} for goal '${goalDesc}'`,
+        output: `Executed plan ${resResult.plan.planId} for goal '${goalDesc}' (status: completed)`,
       };
     }
 

@@ -8,9 +8,12 @@ import { randomUUID } from 'node:crypto';
 import { SkillHandle, SkillManifest, SubsystemHealth, AgyError, UUID, asUUID } from '@agy/shared';
 import { IEventBus } from '@agy/event-bus';
 import { ISkillRegistry, QuarantineRecord } from './interfaces.js';
+import { validateManifest } from './manifest-validator.js';
 
 export interface SkillRegistryOptions {
   eventBus?: IEventBus;
+  /** Optional override path to the manifest JSON schema (defaults to <cwd>/schemas/skill-manifest.json). */
+  schemaPath?: string;
 }
 
 export class SkillRegistry implements ISkillRegistry {
@@ -30,9 +33,11 @@ export class SkillRegistry implements ISkillRegistry {
   private _isReady = false;
   private _bootTime = 0;
   private _eventBus?: IEventBus;
+  private _schemaPath?: string;
 
   constructor(options: SkillRegistryOptions = {}) {
     this._eventBus = options.eventBus;
+    this._schemaPath = options.schemaPath;
   }
 
   public async boot(): Promise<void> {
@@ -60,18 +65,26 @@ export class SkillRegistry implements ISkillRegistry {
       });
     }
 
-    // Validate minimal requirements
-    if (!manifest.id || !manifest.version || !manifest.name) {
+    // Validate against the canonical manifest schema (SRC-16).
+    const issues = validateManifest(manifest, this._schemaPath);
+    const missingIdentity = !manifest.id || !manifest.version || !manifest.name;
+    if (missingIdentity || issues.length > 0) {
+      const errors = missingIdentity
+        ? ['id, version, and name are required']
+        : issues.map((i) => `${i.path}: ${i.message}`);
       this._quarantine.push({
         path: sourceRoot,
-        reason: 'Malformed manifest: Missing required identity fields',
-        errors: ['id, version, and name are required'],
+        reason: missingIdentity
+          ? 'Malformed manifest: Missing required identity fields'
+          : 'Manifest failed schema validation',
+        errors,
         timestamp: Date.now(),
       });
       throw new AgyError(`Invalid manifest for ${manifest.id || 'unknown'}`, {
         code: 'MANIFEST_INVALID',
         subsystem: 'registry',
         retryable: false,
+        details: { errors },
       });
     }
 
@@ -189,29 +202,64 @@ export class SkillRegistry implements ISkillRegistry {
     return [...this._quarantine];
   }
 
-  public async scan(roots: string[]): Promise<SkillManifest[]> {
+  public async scan(roots: string[], maxDepth = 8): Promise<SkillManifest[]> {
     const fs = await import('node:fs');
     const path = await import('node:path');
     const discovered: SkillManifest[] = [];
+    const visited = new Set<string>();
+
+    const visit = async (dir: string, depth: number): Promise<void> => {
+      if (depth < 0) return;
+      let real: string;
+      try {
+        real = fs.realpathSync(dir);
+      } catch {
+        return;
+      }
+      if (visited.has(real)) return;
+      visited.add(real);
+
+      const manifestPath = path.join(dir, 'manifest.json');
+      if (fs.existsSync(manifestPath)) {
+        try {
+          const content = fs.readFileSync(manifestPath, 'utf-8');
+          const manifest = JSON.parse(content) as SkillManifest;
+          // Resolve an executable module path relative to the manifest's
+          // directory so discovered skills run in the worker sandbox.
+          if (!manifest.modulePath && manifest.entryPoint) {
+            manifest.modulePath = path.join(dir, manifest.entryPoint);
+          }
+          await this.register(manifest, dir);
+          discovered.push(manifest);
+        } catch (err: unknown) {
+          // Quarantine malformed manifests instead of silently dropping them (SRC-17).
+          const message = err instanceof Error ? err.message : String(err);
+          this._quarantine.push({
+            path: manifestPath,
+            reason: 'Malformed manifest: failed to parse or validate',
+            errors: [message],
+            timestamp: Date.now(),
+          });
+        }
+      }
+
+      // Recurse into subdirectories (bounded) instead of scanning one level (SRC-17).
+      let entries: import('node:fs').Dirent[];
+      try {
+        entries = fs.readdirSync(dir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const entry of entries) {
+        if (entry.isDirectory()) {
+          await visit(path.join(dir, entry.name), depth - 1);
+        }
+      }
+    };
 
     for (const root of roots) {
       if (!fs.existsSync(root)) continue;
-      const entries = fs.readdirSync(root, { withFileTypes: true });
-      for (const entry of entries) {
-        if (entry.isDirectory()) {
-          const manifestPath = path.join(root, entry.name, 'manifest.json');
-          if (fs.existsSync(manifestPath)) {
-            try {
-              const content = fs.readFileSync(manifestPath, 'utf-8');
-              const manifest = JSON.parse(content) as SkillManifest;
-              await this.register(manifest, root);
-              discovered.push(manifest);
-            } catch {
-              // Quarantined inside register
-            }
-          }
-        }
-      }
+      await visit(root, maxDepth);
     }
 
     return discovered;

@@ -27,6 +27,7 @@
     { "path": "../shared" },
     { "path": "../kernel" },
     { "path": "../event-bus" },
-    { "path": "../runtime-state" }
+    { "path": "../runtime-state" },
+    { "path": "../policy" }
   ]
 }

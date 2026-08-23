@@ -8,7 +8,9 @@
     "@agy/kernel": "*",
     "@agy/event-bus": "*",
     "@agy/registry": "*",
-    "@agy/artifact": "*"
+    "@agy/artifact": "*",
+    "@agy/policy": "*",
+    "@agy/runtime-state": "*"
   },
   "scripts": {
     "build": "tsc -b",
