@@ -37,6 +37,8 @@ export interface CliRuntimeOptions {
    * runtime is in-memory (useful for tests and ephemeral runs).
    */
   persistenceDir?: string;
+  /** Executor worker-pool size (defaults to 10). */
+  maxWorkers?: number;
 }
 
 /**
@@ -64,6 +66,7 @@ export async function createCliRuntime(options: CliRuntimeOptions = {}): Promise
     artifactStore: store,
     policyEngine: policy,
     eventBus: bus,
+    maxWorkers: options.maxWorkers,
   });
   const reflection = new ReflectionEngine({ runtimeState: state });
 

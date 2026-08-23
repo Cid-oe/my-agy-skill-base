@@ -148,6 +148,48 @@ test('ArtifactStore persists blobs to a durable on-disk CAS and recovers on rebo
   }
 });
 
+test('ArtifactStore durable index uses an append-only journal that compacts (no O(n) rewrite per put)', async () => {
+  const os = await import('node:os');
+  const nodePath = await import('node:path');
+  const fs = await import('node:fs');
+  const tempDir = fs.mkdtempSync(nodePath.join(os.tmpdir(), 'agy-cas-journal-'));
+
+  try {
+    // Compact every 5 mutations so compaction triggers within the test.
+    const store = new ArtifactStore({ persistenceDir: tempDir, indexSnapshotInterval: 5 });
+    await store.boot();
+
+    const N = 50;
+    for (let i = 0; i < N; i++) {
+      await store.put(`journal-payload-${i}`);
+    }
+    await store.shutdown();
+
+    const logFile = nodePath.join(tempDir, 'index.log');
+    const snapFile = nodePath.join(tempDir, 'index.json');
+    assert.strictEqual(fs.existsSync(snapFile), true, 'a snapshot must exist after compaction');
+    const logRecords = fs.existsSync(logFile)
+      ? fs.readFileSync(logFile, 'utf-8').split('\n').filter((l) => l.trim().length > 0).length
+      : 0;
+    // After compaction the journal must be far smaller than N records (bounded).
+    assert.ok(logRecords < N, `journal should be compacted, got ${logRecords} records (>= ${N})`);
+
+    // Recovery must restore every artifact despite journal compaction.
+    const store2 = new ArtifactStore({ persistenceDir: tempDir, indexSnapshotInterval: 5 });
+    await store2.boot();
+    for (let i = 0; i < N; i++) {
+      const expected = `journal-payload-${i}`;
+      const hash = (await import('node:crypto')).createHash('sha256').update(expected).digest('hex');
+      const buf = await store2.get(hash as any);
+      assert.ok(buf, `artifact ${i} must be recovered`);
+      assert.strictEqual(buf!.toString('utf-8'), expected);
+    }
+    await store2.shutdown();
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test('ArtifactStore streams large blobs to disk without buffering the whole payload (SRC-15)', async () => {
   const os = await import('node:os');
   const nodePath = await import('node:path');
