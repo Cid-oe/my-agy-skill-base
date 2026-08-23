@@ -308,6 +308,7 @@ export async function handleCliCommand(
 
       await rt.scheduler.submit(resResult.plan);
 
+
       // The scheduler is pull-based: advance until the plan reaches a terminal
       // state. Reporting success after a single tick left multi-node plans
       // silently incomplete (EX-2).
@@ -332,9 +333,34 @@ export async function handleCliCommand(
       };
     }
 
+    if (!cmd || cmd === 'help' || cmd === '--help' || cmd === '-h') {
+      return {
+        success: true,
+        output: [
+          'AGY Skill Hunt CLI v1',
+          'Usage: agy <command> [options]',
+          '',
+          'Commands:',
+          '  init                                 Initialize local AGY workspace',
+          '  status                               Show kernel and subsystem status',
+          '  registry scan [dir]                  Scan directory for skills and register them',
+          '  skill list                           List all registered skills',
+          '  skill scan [dir]                     Alias for registry scan',
+          '  skill search <query>                 Search skills by keyword',
+          '  skill inspect <skill-id>             Show detailed skill card',
+          '  skill validate <directory>           Validate a skill directory',
+          '  skill rank --produces <artifact>     Rank skills that produce an artifact',
+          '  skill paths <from-art> <to-art>      Find compatibility paths between artifacts',
+          '  goal run <goal> <artifact>           Run a goal to produce an artifact',
+          '  run <goal> <artifact>                Alias for goal run',
+          '  artifact inspect <hash>              Inspect a stored artifact'
+        ].join('\n')
+      };
+    }
+
     return {
       success: false,
-      output: `Unknown command: ${args.join(' ')}. Available commands: init, status, registry scan [dir], skill list|scan|search|inspect|validate|rank|paths, goal run <goal> <artifact>, run <goal> <artifact>, artifact inspect <hash>`,
+      output: `Unknown command: ${args.join(' ')}. Run 'agy help' for available commands.`,
     };
   } finally {
     if (!runtime) {

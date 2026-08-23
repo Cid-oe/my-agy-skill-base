@@ -189,6 +189,13 @@ test('CLI Skill Hunt commands initialize, discover, inspect, rank, path, and ins
     assert.strictEqual(validation.success, true);
     assert.match(validation.output, /Score: 100\/100/);
 
+    const invalidSkillDir = path.join(tempDir, 'examples', 'invalid');
+    fs.mkdirSync(invalidSkillDir, { recursive: true });
+    const invalidValidation = await handleCliCommand(['skill', 'validate', invalidSkillDir], rt);
+    assert.strictEqual(invalidValidation.success, false);
+    assert.match(invalidValidation.output, /FAIL manifest\.json is missing/);
+    assert.match(invalidValidation.output, /Score: 0\/100/);
+
     const rank = await handleCliCommand(['skill', 'rank', '--produces', 'FileContent'], rt);
     assert.strictEqual(rank.success, true);
     assert.match(rank.output, /reader-skill/);
