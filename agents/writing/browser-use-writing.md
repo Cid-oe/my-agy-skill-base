@@ -1,0 +1,48 @@
+---
+name: browser-use-writing
+description: Use to operate a web browser — open URLs, read page content, click, fill forms, take screenshots — through the Tutti CLI.
+kind: local
+model: inherit
+agy:
+  version: 1.0.0
+  category: writing
+  tags: []
+  compatibility:
+    status: fully-compatible
+    score: 100
+    notes: Converted directly; no manual steps required.
+  validation: passed
+  imported: '2026-08-26T09:00:55+00:00'
+  sources:
+  - repo: tutti-os/tutti
+    author: tutti-os
+    license: Apache-2.0
+    url: https://github.com/tutti-os/tutti
+    path: packages/agent/runtimeprep/skill_templates/browser-use.md
+    format: markdown-frontmatter
+---
+
+# Browser Use
+
+Use this skill for browser tasks: open URLs, read pages, click, fill forms, run page JS, or capture screenshots.
+
+Drive the browser only through `{{.CLICommand}} browser`. The Tutti daemon owns the browser session. Do not launch `open`, `xdg-open`, `start`, `google-chrome`, `chromium`, or direct browser automation; those are outside the managed session.
+
+## Protocol
+
+1. Open a requested URL directly with `{{command "browser.open" (args "url" "<url>")}}`. This creates and selects a managed Browser page before loading the URL. Do not use a cold `navigate` call as the first command.
+2. Read the current page with `{{command "browser.snapshot"}}`; use returned `uid` values for interactions.
+3. Act with `{{command "browser.click" (args "uid" "<uid>")}}` or `{{command "browser.fill" (args "uid" "<uid>" "value" "<text>")}}`.
+4. Use `{{command "browser.list-pages"}}` to inspect the workspace Browser and any session-owned Agent Browser tabs. Select a stable target with `{{command "browser.select-page" (args "page-id" "<id>")}}` when needed.
+5. Create another managed Browser page with `{{command "browser.new-page" (args "url" "<url>")}}` and close a page you own with `{{command "browser.close-page" (args "page-id" "<id>")}}`.
+6. Navigate the selected page later with `{{command "browser.navigate" (args "url" "<url>")}}`.
+7. Use `{{command "browser.eval" (args "script" "'() => document.title'")}}` for page JS and `{{command "browser.screenshot"}}` for a PNG path.
+8. Re-run `snapshot` after navigation or UI-changing actions because `uid` values can change.
+
+Append `--json` only when the exact command's help advertises it. Browser commands support JSON, but plain output is normally sufficient for page text.
+
+## Guardrails
+
+- The desktop browser session includes visible in-app BrowserNode tabs for the current workspace. Website App tabs are outside this automation scope.
+- User Browser tabs may contain the user's active work. Read or modify them only when that is required by the request.
+- If the desktop BrowserNode host or the headless managed Chrome backend is unavailable, report that error instead of falling back to shell/browser tools.

@@ -1,0 +1,45 @@
+---
+name: hooklog-ah4y1j-reviewer-1
+description: 'Two-file diff: `VERSION` (2.16.1 -> 2.17.0) and `CHANGELOG.md`.'
+kind: local
+model: inherit
+agy:
+  version: 1.0.0
+  category: writing
+  tags:
+  - HOOKLOG-ah4y1j-reviewer-1
+  compatibility:
+    status: fully-compatible
+    score: 100
+    notes: Converted directly; no manual steps required.
+  validation: passed
+  imported: '2026-08-26T09:00:11+00:00'
+  sources:
+  - repo: PeonPing/peon-ping
+    author: PeonPing
+    license: MIT
+    url: https://github.com/PeonPing/peon-ping
+    path: .claude/worktrees/agent-aeaa07d9/.gitban/agents/reviewer/inbox/HOOKLOG-ah4y1j-reviewer-1.md
+    format: markdown-frontmatter
+---
+
+## Review: step-6-version-bump-and-changelog
+
+Two-file diff: `VERSION` (2.16.1 -> 2.17.0) and `CHANGELOG.md`.
+
+**Version bump justification.** Minor bump is correct per the project's releasing conventions. The HOOKLOG sprint introduces new user-facing features (structured debug logging), two new CLI commands (`peon debug`, `peon logs`), and two new config keys (`debug`, `debug_retention_days`). All of these warrant a minor version increment.
+
+**CHANGELOG quality.** The v2.17.0 entry is well-categorized into Added (9 items) and Fixed (3 items). Descriptions are specific and actionable -- each item names the feature, the relevant CLI surface, and the user-visible behavior. The previously-floating "Unreleased" section (Nix/Home Manager custom pack sources) was correctly absorbed into the release rather than left orphaned. Chronological ordering of releases is preserved.
+
+**Tag.** `v2.17.0` tag exists and points at this commit. Tags are not pushed, which matches the card's stated plan of waiting for PR merge first.
+
+**TDD.** Not applicable -- no behavioral code changes, only metadata files.
+
+**Checkbox integrity.** All six completion checkboxes are checked. Each is truthful: changes are implemented (VERSION + CHANGELOG), verified (no code to break), documented (the changelog is the documentation), reviewed, and committed. The "follow-up tickets" checkbox notes the homebrew tap update, which is handled automatically by tag-push CI.
+
+No blockers. No follow-up items.
+
+### Close-out actions
+
+- Push tags after PR merge: `git push --tags`
+- Homebrew tap formula update is triggered automatically by CI on tag push.

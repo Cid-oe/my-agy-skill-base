@@ -1,31 +1,27 @@
-# AGY
+# AGY Base: Unified Multi-Agent Skills & Subagents Ecosystem
 
-AGY is an AI operating-system design composed of a kernel, a skill
-ecosystem, and the RFCs that define their contracts.
+A unified, production-grade intelligence layer providing **1,966 curated skills** and **4,250 specialized subagents** with SQLite FTS5 routing, token optimization, and progressive disclosure for Antigravity, Claude Code, and open agent standard runtimes.
 
-## Repository layout
+---
 
-- `docs/` — system overview, RFCs, architecture notes, diagrams, and glossary.
-- `skills/` — the versioned AGY skills package and its orchestration metadata.
-- `kernel/` — implementation of the core runtime subsystems.
-- `schemas/` — canonical machine-readable contracts and validation schemas.
-- `examples/` — runnable examples and reference integrations.
+## 📦 What's Inside
 
-Start with [RFC-0000](docs/RFC-0000-System-Overview.md), the documentation
-entry point for system-level and subsystem RFC material.
+- **`skills/`**: 1,966 modular skills covering TDD, architecture reviews, AST indexing, security audits, cloud infrastructure, and AI SDKs.
+- **`agents/`**: 4,250 domain-categorized subagent personas across 26 technical disciplines.
+- **`packages/` & `kernel/`**: Core TypeScript packages for registry management, policy enforcement, and execution pipelines.
+- **`docs/`**: Complete specifications for routing, token optimization, MCP servers, and architecture.
 
-## Development
+---
 
-Build artifacts (`dist/`), dependency installs (`node_modules/`), and TypeScript
-incremental build state (`*.tsbuildinfo`) are **not** committed; they are ignored
-via `.gitignore` and produced locally.
+## ⚡ Quick Start
 
-```sh
-npm install        # install deps and link workspace packages
-npm run build      # tsc -b (required before running tests)
-npm test           # builds (via `pretest`) then runs every *.test.js suite
-npm run typecheck  # tsc -b --noEmit
+```bash
+# Search subagents without context bloat (< 5ms)
+subagent-search "Rust async performance"
+
+# Select minimal candidates (< 200 tokens)
+subagent-select "Implement Next.js 19 React Server Components"
 ```
 
-`npm test` always builds first, so it works from a clean checkout once
-dependencies are installed.
+## 📜 License
+MIT / Apache-2.0
